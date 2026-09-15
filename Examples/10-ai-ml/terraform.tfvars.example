@@ -1,5 +1,0 @@
-prefix                  = "aztfai"
-location                = "eastus2"
-enable_openai           = false
-openai_deployments      = {}
-enable_machine_learning = false

@@ -1,6 +1,0 @@
-prefix        = "aztfedge"
-location      = "eastus2"
-dns_zone_name = "terraform-demo.example"
-
-enable_application_gateway = false
-traffic_manager_endpoints  = {}

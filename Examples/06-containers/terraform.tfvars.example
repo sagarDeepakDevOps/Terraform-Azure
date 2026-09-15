@@ -1,5 +1,0 @@
-prefix     = "aztfctr"
-location   = "eastus2"
-enable_aks = false
-
-aks_admin_group_object_ids = []

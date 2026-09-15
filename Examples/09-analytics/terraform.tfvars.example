@@ -1,6 +1,0 @@
-prefix            = "aztfana"
-location          = "eastus2"
-enable_synapse    = false
-enable_databricks = false
-
-configure_synapse_managed_endpoints = false

@@ -1,7 +1,0 @@
-#cloud-config
-package_update: true
-packages:
-  - nginx
-runcmd:
-  - [sh, -c, 'printf "<h1>Azure Terraform demo</h1><p>Backend: %s</p>\n" "$(hostname)" > /var/www/html/index.html']
-  - [systemctl, enable, --now, nginx]

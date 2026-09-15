@@ -1,4 +1,0 @@
-prefix                = "aztfmsg"
-location              = "eastus2"
-enable_api_management = false
-enable_workflow       = false
