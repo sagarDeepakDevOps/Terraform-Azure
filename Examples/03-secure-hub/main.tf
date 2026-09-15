@@ -1,3 +1,5 @@
+# Purpose: Create the dedicated resource group for this paid secure-hub demonstration.
+# Creation: Other modules consume its output name so Azure creates the group first.
 module "resource_group" {
   source   = "../../Modules/ResourceGroups"
   name     = "${var.prefix}-rg"
@@ -5,6 +7,10 @@ module "resource_group" {
   tags     = var.tags
 }
 
+# Purpose: Reserve the hub address space and Azure-required appliance subnet names.
+# Creation: Build 10.40.0.0/16 with /26 Firewall/Bastion ranges and a /27 GatewaySubnet.
+# These subnet IDs become inputs to the appliance modules after the VNet exists.
+# Important: Creating reserved subnets alone does not deploy their paid appliances.
 module "hub" {
   source              = "../../Modules/Vnet"
   name                = "${var.prefix}-vnet"
@@ -19,6 +25,9 @@ module "hub" {
   tags = var.tags
 }
 
+# Purpose: Create a separate workload network to demonstrate routed hub-spoke traffic.
+# Creation: Build 10.41.0.0/16 and its workload subnet in the shared lab group.
+# Important: No workload VM is included; routes/NSG below configure the empty subnet.
 module "spoke" {
   source              = "../../Modules/Vnet"
   name                = "${var.prefix}-spoke"
@@ -31,6 +40,11 @@ module "spoke" {
   tags = var.tags
 }
 
+# Purpose: Deploy the real Standard Firewall used by the spoke's default route.
+# Creation: Use the hub's AzureFirewallSubnet ID and allow configured repository
+# traffic from the spoke CIDR. The private IP output becomes the UDR next hop below.
+# Important: Firewall is created by default in this lab and has significant recurring
+# cost. A valid route must reference its actual output, not a guessed private address.
 module "firewall" {
   source                  = "../../Modules/Vnet/Firewalls"
   name                    = "${var.prefix}-fw"
@@ -41,6 +55,9 @@ module "firewall" {
   tags                    = var.tags
 }
 
+# Purpose: Optionally provide managed administration from the dedicated Bastion subnet.
+# Creation: count creates one Standard Bastion only when enable_bastion is true.
+# Important: VMs/login permissions remain separate, and idle Bastion still has charges.
 module "bastion" {
   source              = "../../Modules/Vnet/Bastion"
   count               = var.enable_bastion ? 1 : 0
@@ -51,6 +68,11 @@ module "bastion" {
   tags                = var.tags
 }
 
+# Purpose: Optionally add a zone-redundant VPN gateway and a configured S2S peer.
+# Creation: Use GatewaySubnet and pass optional on-premises details plus the sensitive
+# shared key. The child creates the connection only if remote details are provided.
+# Important: The remote device is configured outside this code; a gateway object
+# alone does not connect a laptop or establish a working site-to-site tunnel.
 module "vpn" {
   source              = "../../Modules/Vnet/VPNGateway"
   count               = var.enable_vpn ? 1 : 0
@@ -63,6 +85,11 @@ module "vpn" {
   tags                = var.tags
 }
 
+# Purpose: Connect the spoke to the hub, allowing appliance-forwarded traffic.
+# Creation: Pass both VNet IDs and enable gateway transit only when enable_vpn is
+# selected. depends_on waits for the optional VPN module before requesting transit.
+# Important: Peering is not transitive; routes and return paths must still be designed
+# explicitly. The gateway setting does not force all private traffic through Firewall.
 module "peering" {
   source                  = "../../Modules/Vnet/Peering"
   allow_forwarded_traffic = true
@@ -77,6 +104,10 @@ module "peering" {
   depends_on = [module.vpn]
 }
 
+# Purpose: Send the spoke workload subnet's default traffic toward Azure Firewall.
+# Creation: Bind a 0.0.0.0/0 VirtualAppliance route using the actual firewall private
+# IP output, ordering route creation after the firewall is available.
+# Important: No equivalent default route is attached to the reserved hub gateway subnets.
 module "routes" {
   source              = "../../Modules/Vnet/routeTables"
   name                = "${var.prefix}-egress-rt"
@@ -93,6 +124,10 @@ module "routes" {
   tags = var.tags
 }
 
+# Purpose: Restrict workload administration to the hub's Bastion source subnet.
+# Creation: Attach SSH/RDP allow rules for 10.40.1.0/26 and a final inbound deny to
+# the spoke workload subnet. The subnet ID creates the implicit network dependency.
+# Important: This grants network reachability only, not Azure permissions or guest logins.
 module "workload_nsg" {
   source              = "../../Modules/Vnet/NSG"
   name                = "${var.prefix}-workload-nsg"

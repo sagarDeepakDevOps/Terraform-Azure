@@ -8,6 +8,11 @@ terraform {
   }
 }
 
+# Purpose: Allocate the regional gateway's public HTTPS listening address.
+# Creation: AzureRM reserves a static Standard public IP and passes its ID into
+# the Application Gateway frontend below. A real domain should resolve to it.
+# Important: Clients must use the listener's certificate hostname, not merely this
+# numeric address. IP allocation and the gateway both incur charges.
 resource "azurerm_public_ip" "this" {
   name                = "${var.name}-pip"
   resource_group_name = var.resource_group_name
@@ -17,6 +22,11 @@ resource "azurerm_public_ip" "this" {
   tags                = var.tags
 }
 
+# Purpose: Define regional web-request filtering separately from the gateway appliance.
+# Creation: Create an enabled WAF policy using OWASP 3.2 managed rules in Prevention
+# mode; the gateway's firewall_policy_id attaches it to the listener traffic path.
+# Important: Review application compatibility and false positives before production.
+# A WAF policy does not implement user authentication, backend authorization or DNS.
 resource "azurerm_web_application_firewall_policy" "this" {
   name                = "${var.name}-waf"
   resource_group_name = var.resource_group_name
@@ -36,6 +46,19 @@ resource "azurerm_web_application_firewall_policy" "this" {
   }
 }
 
+# Purpose: Create a regional HTTPS reverse proxy with WAF for the supplied backends.
+# Creation: Azure provisions WAF_v2 in a dedicated subnet and joins the public IP,
+# WAF policy, HTTPS frontend, certificate and listener. Named routing blocks connect
+# the listener to the application backend pool and https-backend settings; resource
+# references provide ordering for the IP/policy/subnet prerequisites.
+# TLS: The supplied base64 PFX/password configure client-facing TLS with SNI and the
+# chosen SSL policy. A separate HTTPS leg connects to backend FQDNs, using their host
+# names and trusted certificates. The / health probe controls backend eligibility.
+# Capacity: Autoscaling is bounded at 1-2 gateway instances for this demonstration.
+# Important: This creates no backend application, certificate or DNS record. The PFX
+# private key/password remain sensitive in state; production should use a reviewed
+# Key Vault certificate design. Check reserved subnet needs, healthy backends and
+# significant fixed/usage costs before applying, even when no users are connected.
 resource "azurerm_application_gateway" "this" {
   name                = var.name
   resource_group_name = var.resource_group_name

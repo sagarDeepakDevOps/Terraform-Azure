@@ -8,6 +8,11 @@ terraform {
   }
 }
 
+# Purpose: Give AKS worker-node kubelets their own explicit Azure identity for image pulls.
+# Creation: Azure creates this user-assigned identity before the cluster; its ARM,
+# client and principal IDs populate the cluster's kubelet_identity block below.
+# Important: This is distinct from the caller-supplied control-plane identity and
+# from application workload identities. Its permissions are granted separately.
 resource "azurerm_user_assigned_identity" "kubelet" {
   name                = "${var.name}-kubelet"
   resource_group_name = var.resource_group_name
@@ -15,6 +20,12 @@ resource "azurerm_user_assigned_identity" "kubelet" {
   tags                = var.tags
 }
 
+# Purpose: Let the AKS control-plane identity assign/use the explicit kubelet identity.
+# Creation: Grant Managed Identity Operator on the new kubelet identity resource
+# to var.identity_principal_id, the Entra object ID of the control-plane identity.
+# The cluster explicitly waits for this grant before provisioning.
+# Important: This role is scoped to that identity and is not permission to pull
+# registry images or administer Kubernetes; those are different grants/settings.
 resource "azurerm_role_assignment" "kubelet_operator" {
   scope                = azurerm_user_assigned_identity.kubelet.id
   role_definition_name = "Managed Identity Operator"
@@ -22,6 +33,20 @@ resource "azurerm_role_assignment" "kubelet_operator" {
   principal_type       = "ServicePrincipal"
 }
 
+# Purpose: Create a private AKS platform with Entra administration and explicit identities.
+# Creation: Azure provisions the managed control plane and an Ubuntu system pool
+# in subnet_id, using the caller's identity for Azure management and the identity
+# above for kubelets. The caller first grants Network Contributor on the VNet and
+# attaches NAT; explicit depends_on also waits for identity-operator/registry grants.
+# Networking: The API uses an AKS-managed private DNS zone with no public FQDN.
+# Azure CNI overlay/Cilium uses separate pod/service ranges, and userAssignedNATGateway
+# egress requires the caller's real NAT association. Ranges must not overlap connected
+# networks. A client needs private routing/DNS plus Entra permissions to use kubectl.
+# Operations: Enable patch/node-image upgrade channels, monitoring, workload-identity
+# capability, Azure Policy integration and secret rotation through the Key Vault CSI
+# provider. These features do not create application policies, secrets or workloads.
+# Important: Free refers to the control-plane tier, not VM nodes/disks/networking.
+# No Kubernetes manifests or workload federated credentials are installed by this block.
 resource "azurerm_kubernetes_cluster" "this" {
   name                                = var.name
   resource_group_name                 = var.resource_group_name
@@ -41,6 +66,8 @@ resource "azurerm_kubernetes_cluster" "this" {
   node_os_upgrade_channel             = "NodeImage"
   tags                                = var.tags
 
+  # Azure may autoscale the initial one-node pool between one and three nodes.
+  # The rotation name and surge setting support managed node-pool updates.
   default_node_pool {
     name                        = "system"
     vm_size                     = var.node_size
@@ -68,6 +95,8 @@ resource "azurerm_kubernetes_cluster" "this" {
     user_assigned_identity_id = azurerm_user_assigned_identity.kubelet.id
   }
 
+  # Supply existing Entra group object IDs, not group names or client IDs.
+  # Local accounts are disabled, so retain a tested Entra administration path.
   azure_active_directory_role_based_access_control {
     tenant_id              = var.tenant_id
     azure_rbac_enabled     = true
@@ -94,6 +123,7 @@ resource "azurerm_kubernetes_cluster" "this" {
     secret_rotation_enabled = true
   }
 
+  # Let Azure own the autoscaled count while Terraform manages the rest of the pool.
   lifecycle {
     ignore_changes = [default_node_pool[0].node_count]
   }
@@ -101,6 +131,12 @@ resource "azurerm_kubernetes_cluster" "this" {
   depends_on = [azurerm_role_assignment.kubelet_operator, azurerm_role_assignment.registry_pull]
 }
 
+# Purpose: Permit the worker-node kubelet identity to pull images from the chosen ACR.
+# Creation: Grant AcrPull on var.registry_id to the explicit kubelet principal,
+# and make cluster creation wait for the grant. No registry password is required.
+# Important: Skipping the directory lookup helps with newly created principals;
+# it does not bypass Azure authorization. This grants image pulls, not image push,
+# application data access or a network path to a private registry endpoint.
 resource "azurerm_role_assignment" "registry_pull" {
   scope                            = var.registry_id
   role_definition_name             = "AcrPull"

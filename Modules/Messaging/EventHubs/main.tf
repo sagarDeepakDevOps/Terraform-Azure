@@ -8,6 +8,13 @@ terraform {
   }
 }
 
+# Purpose: Provision the streaming namespace that supplies Event Hubs throughput capacity.
+# Creation: AzureRM creates Standard capacity at one throughput unit, with auto-inflate
+# permitted up to two as load increases. The stream below references this namespace.
+# Security: Require TLS 1.2 and Entra authentication; local keys are disabled while
+# the public endpoint remains enabled for this demonstration.
+# Important: Auto-inflate scales capacity up, not automatically back down. Capacity
+# and ingestion are billable, and producers/consumers still need roles and connectivity.
 resource "azurerm_eventhub_namespace" "this" {
   name                          = var.name
   resource_group_name           = var.resource_group_name
@@ -22,6 +29,12 @@ resource "azurerm_eventhub_namespace" "this" {
   tags                          = var.tags
 }
 
+# Purpose: Create the partitioned telemetry log consumed by streaming applications.
+# Creation: Add telemetry to the new namespace with two partitions and Delete
+# retention of 24 hours. This configures ordered logs within individual partitions,
+# not a single global ordering guarantee across the entire stream.
+# Important: Consumers must checkpoint and keep up within retention. Creating the
+# stream does not publish events, install processors or preserve data indefinitely.
 resource "azurerm_eventhub" "this" {
   name            = "telemetry"
   namespace_id    = azurerm_eventhub_namespace.this.id
@@ -33,6 +46,11 @@ resource "azurerm_eventhub" "this" {
   }
 }
 
+# Purpose: Give analytics consumers an independent view of the telemetry stream.
+# Creation: Add an analytics consumer group using the new namespace/stream names;
+# those references order it after the broker and event hub exist.
+# Important: This is consumer metadata, not a running consumer, access grant or
+# checkpoint store. The consuming SDK/application must manage those responsibilities.
 resource "azurerm_eventhub_consumer_group" "this" {
   name                = "analytics"
   namespace_name      = azurerm_eventhub_namespace.this.name

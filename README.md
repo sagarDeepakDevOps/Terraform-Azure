@@ -186,4 +186,23 @@ No remote repository is assumed or configured. After publishing, use GitHub perm
 
 ## Verification Status
 
-All 12 roots passed `terraform validate`; all 23 mocked test runs passed with the versions above. Recursive formatting and Bash syntax checks passed. No live Azure plan, apply, destroy, application smoke test or cloud security certification was performed. A client-specific pilot deployment remains a separate acceptance step.# Terraform-Azure
+All 12 roots passed `terraform validate`; all 23 mocked test runs passed with the versions above. Recursive formatting and Bash syntax checks passed. No live Azure plan, apply, destroy, application smoke test or cloud security certification was performed. A client-specific pilot deployment remains a separate acceptance step.
+
+
+## Questions and Answers
+
+**Does Terraform replace Azure?** No. Terraform calls Azure APIs to manage resources. Azure still provides and operates the services.
+
+**Does this create every Azure service?** No. It implements the major service families listed in the catalog. Specialized products and enterprise landing-zone decisions are explicit extensions.
+
+**Can the same code serve development and production?** Reusable modules can, but environment inputs, state, permissions, availability, security and approval policies must be isolated. Changing only an environment tag is not production hardening.
+
+**Are private endpoints enough for security?** No. Private DNS, routing, access control, identity, authorization, encryption, monitoring and application behavior still matter.
+
+**Are passwords protected by Terraform's sensitive flag?** The flag redacts normal output. State and saved plans can still contain the actual values and must be protected.
+
+**Can a budget stop overspending?** Azure budgets notify. They do not automatically shut down all resources or impose a hard spending ceiling.
+
+**Do passing tests prove Azure will deploy it?** They prove the tested Terraform contracts and schema checks passed. A real pilot is still needed for permissions, quotas, region/SKU constraints, private connectivity and runtime behavior.
+
+**Is this production-ready as-is?** No. It is teaching/reference code. Use the production acceptance checklist in [Docs/SECURITY-AND-COST.md](SECURITY-AND-COST.md) to define the customer's pilot and implementation work.

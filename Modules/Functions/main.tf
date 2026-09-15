@@ -8,6 +8,11 @@ terraform {
   }
 }
 
+# Purpose: Select the Linux Flex Consumption hosting model for Azure Functions.
+# Creation: AzureRM creates an FC1 plan in a supporting region; the Function App
+# below references its ID so plan provisioning happens first.
+# Important: FC1 has different runtime/network features from classic Consumption
+# or dedicated App Service. Check current regional availability before deployment.
 resource "azurerm_service_plan" "this" {
   name                = "${var.name}-plan"
   resource_group_name = var.resource_group_name
@@ -17,6 +22,19 @@ resource "azurerm_service_plan" "this" {
   tags                = var.tags
 }
 
+# Purpose: Provision a Node 22 Function App using identity-backed storage and VNet access.
+# Creation: Attach the FC1 plan, user-assigned identity and delegated integration
+# subnet. Deployment artifacts use storage_container_endpoint with that identity's
+# ARM ID; AzureWebJobsStorage settings separately select the host account and the
+# same identity's client ID. The caller must first create the storage container,
+# grant host/deployment roles and establish private storage DNS/connectivity.
+# Security: Enforce HTTPS/TLS 1.2 and disable basic WebDeploy authentication. No
+# storage key is configured. Application Insights receives the supplied connection
+# setting, while the identity must still be authorized on any services the app uses.
+# Capacity: Instances use 2048 MiB and scale up to 40; this is not a spending cap.
+# Important: VNet integration provides outbound connectivity, not private ingress.
+# This block deploys no function package or triggers; publish compatible code and
+# test host initialization, storage access and application routes separately.
 resource "azurerm_function_app_flex_consumption" "this" {
   name                                           = var.name
   resource_group_name                            = var.resource_group_name

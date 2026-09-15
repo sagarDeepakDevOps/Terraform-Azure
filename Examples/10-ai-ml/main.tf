@@ -1,9 +1,21 @@
+# Purpose: Read the root provider's tenant for the optional ML workspace's Key Vault.
+# Evaluation: This lookup creates no Entra object; mocked tests supply a fake tenant ID.
 data "azurerm_client_config" "current" {}
 
+# Purpose: Generate a state-stable suffix for globally unique AI/storage service names.
+# Creation: Random generates three bytes locally and exports six hexadecimal characters.
+# Important: This is a naming aid, not a credential or an Azure-deployed resource.
 resource "random_id" "suffix" {
   byte_length = 3
 }
 
+# Purpose: Derive names and pair each selected AI service with its private endpoint groups.
+# Evaluation: Always include Cognitive Services/Search; merge OpenAI and ML dependencies
+# only when selected. Each service carries a list of DNS zones because ML needs both
+# API and notebook namespaces for its single amlworkspace endpoint group.
+# flatten collects all zone names and toset removes duplicates before zone creation.
+# Important: Known map keys drive for_each even while created resource IDs are unknown;
+# these expressions wire dependencies but do not grant access or create endpoints themselves.
 locals {
   name = "${var.prefix}${random_id.suffix.hex}"
   private_services = merge({
@@ -20,6 +32,8 @@ locals {
   private_zones = toset(flatten([for service in values(local.private_services) : service.zones]))
 }
 
+# Purpose: Keep this AI reference lab and optional ML dependencies under one independent state.
+# Creation: Create the tagged resource group before modules that consume its name output.
 module "resource_group" {
   source   = "../../Modules/ResourceGroups"
   name     = "${var.prefix}-rg"
@@ -27,6 +41,9 @@ module "resource_group" {
   tags     = var.tags
 }
 
+# Purpose: Host the private AI, storage and vault endpoints selected by this root.
+# Creation: Create 10.110.0.0/16 with an undelegated endpoint subnet and export its ID.
+# Important: No client VPN, private runner or ML training subnet is provisioned here.
 module "network" {
   source              = "../../Modules/Vnet"
   name                = "${var.prefix}-vnet"
@@ -39,6 +56,9 @@ module "network" {
   tags = var.tags
 }
 
+# Purpose: Create an identity a future application can use to call the AI services.
+# Creation: Its principal ID receives AI/Search roles, while a deployed application
+# would attach/select its ARM/client ID. The optional ML workspace uses a different identity.
 module "identity" {
   source              = "../../Modules/Identity"
   name                = "${var.prefix}-app-identity"
@@ -47,6 +67,10 @@ module "identity" {
   tags                = var.tags
 }
 
+# Purpose: Deploy a private multi-service AI account with local API keys disabled.
+# Creation: The child module uses the global name/group/region; the private-services
+# map consumes its ID and ai_roles grants the app identity permission afterward.
+# Important: This does not implement an application or enable every specialized AI capability.
 module "cognitive" {
   source              = "../../Modules/AI/CognitiveServices"
   name                = "${local.name}-cog"
@@ -55,6 +79,9 @@ module "cognitive" {
   tags                = var.tags
 }
 
+# Purpose: Provision private, Entra-authenticated Search capacity for later indexes.
+# Creation: Create the Basic service in the new group and feed its ID into endpoint
+# and role modules. Important: Index schemas/documents are not deployed; idle Search is billable.
 module "search" {
   source              = "../../Modules/AI/Search"
   name                = "${local.name}-search"
@@ -63,6 +90,11 @@ module "search" {
   tags                = var.tags
 }
 
+# Purpose: Optionally create an OpenAI account and only the explicitly requested models.
+# Creation: count follows enable_openai and passes the deployment map to the child;
+# an empty map creates an account without an inference model deployment.
+# Important: Verify model/version/SKU availability, quota and residency before selecting
+# deployments. The mock model fixtures are not a promise of live regional availability.
 module "openai" {
   source              = "../../Modules/AI/OpenAI"
   count               = var.enable_openai ? 1 : 0
@@ -73,6 +105,11 @@ module "openai" {
   tags                = var.tags
 }
 
+# Purpose: Authorize the application identity for the selected AI service APIs.
+# Creation: Merge Cognitive/Search grants with an OpenAI grant only when its account
+# exists; each role uses the matching service ARM scope and the app principal ID.
+# Important: Search document-data permission is not index-administration permission,
+# and none of these roles establishes a network path or attaches an application.
 module "ai_roles" {
   source = "../../Modules/RoleAssignments"
   assignments = merge({
@@ -83,6 +120,10 @@ module "ai_roles" {
   } : {})
 }
 
+# Purpose: Provision dedicated system/artifact storage only when the ML workspace is selected.
+# Creation: count follows enable_machine_learning and creates non-HNS private Storage
+# with empty datasets/artifacts containers. Its ID is reused for workspace access/roles.
+# Important: This does not upload datasets or create training jobs; shared keys stay disabled.
 module "ml_storage" {
   source              = "../../Modules/Storage"
   count               = var.enable_machine_learning ? 1 : 0
@@ -93,6 +134,10 @@ module "ml_storage" {
   tags                = var.tags
 }
 
+# Purpose: Create the ML workspace's dedicated private vault and retention boundary.
+# Creation: When ML is enabled, pass the current tenant and generated vault name.
+# Important: The workspace identity receives separate data/management grants below;
+# no secrets are seeded, and purge protection affects later deletion/name reuse.
 module "ml_vault" {
   source              = "../../Modules/KeyVault"
   count               = var.enable_machine_learning ? 1 : 0
@@ -103,6 +148,9 @@ module "ml_vault" {
   tags                = var.tags
 }
 
+# Purpose: Create the optional ML telemetry workspace only with the ML feature.
+# Creation: Its ARM ID becomes the backing workspace for ml_insights below.
+# Important: Actual workload telemetry and ingestion costs depend on later ML activity.
 module "ml_logs" {
   source              = "../../Modules/Monitoring/LogAnalytics"
   count               = var.enable_machine_learning ? 1 : 0
@@ -112,6 +160,9 @@ module "ml_logs" {
   tags                = var.tags
 }
 
+# Purpose: Supply the Application Insights dependency required by the ML workspace.
+# Creation: Link the component to the created ML Log Analytics workspace; pass the
+# resulting component ARM ID, not its connection string, to machine_learning below.
 module "ml_insights" {
   source              = "../../Modules/Monitoring/ApplicationInsights"
   count               = var.enable_machine_learning ? 1 : 0
@@ -122,6 +173,9 @@ module "ml_insights" {
   tags                = var.tags
 }
 
+# Purpose: Keep the ML platform identity separate from the application's AI-calling identity.
+# Creation: Create one user-assigned identity when ML is enabled; its principal ID
+# receives dependency access, and its ARM ID is attached as the workspace identity.
 module "ml_identity" {
   source              = "../../Modules/Identity"
   count               = var.enable_machine_learning ? 1 : 0
@@ -131,6 +185,11 @@ module "ml_identity" {
   tags                = var.tags
 }
 
+# Purpose: Pre-authorize the ML workspace identity on its storage, vault and telemetry.
+# Creation: Expand explicit resource-scoped grants for Blob/Files data, storage
+# management, vault secrets/management and monitoring using the created dependency IDs.
+# Important: These are platform dependency roles, not grants to every scientist/user.
+# The workspace waits for assignment creation, but Azure propagation can still delay use.
 module "ml_roles" {
   source = "../../Modules/RoleAssignments"
   count  = var.enable_machine_learning ? 1 : 0
@@ -144,6 +203,11 @@ module "ml_roles" {
   }
 }
 
+# Purpose: Optionally create the private ML workspace with identity-based system storage.
+# Creation: Pass storage, vault, Insights and identity ARM IDs after the required role
+# grants. The child configures managed networking but defers its provisioning stage.
+# Important: No compute, trained model or inference endpoint is created. Private
+# client access and approved managed outbound connections are still required for real work.
 module "machine_learning" {
   source                  = "../../Modules/AI/MachineLearning"
   count                   = var.enable_machine_learning ? 1 : 0
@@ -159,6 +223,10 @@ module "machine_learning" {
   depends_on = [module.ml_roles]
 }
 
+# Purpose: Create/link each unique private namespace needed by the selected AI graph.
+# Creation: for_each uses the flattened, deduplicated zone-name set and links this
+# lab's VNet. Endpoint groups below retrieve the appropriate one or more zone IDs.
+# Important: Other client networks need explicit links or forwarding, not merely peering.
 module "private_dns" {
   source              = "../../Modules/Vnet/PrivateDNS"
   for_each            = local.private_zones
@@ -168,6 +236,11 @@ module "private_dns" {
   tags                = var.tags
 }
 
+# Purpose: Bind each selected AI service/dependency to the private endpoint subnet.
+# Creation: Pair its ARM ID/service group with all required zone IDs and the subnet.
+# The inner for expression handles the ML API/notebook multi-zone case without
+# creating duplicate service endpoints solely because a service uses two DNS zones.
+# Important: These inbound connections do not provision the ML managed outbound network.
 module "private_endpoints" {
   source               = "../../Modules/Vnet/PrivateEndpoints"
   for_each             = local.private_services

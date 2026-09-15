@@ -8,6 +8,15 @@ terraform {
   }
 }
 
+# Purpose: Create Azure Container Registry to hold versioned container images/artifacts.
+# Creation: AzureRM provisions the globally named registry at the selected SKU;
+# callers receive its ARM ID for role grants and login_server for image references.
+# Security: Shared administrator credentials and anonymous pulls are disabled.
+# Applications authenticate using scoped identities such as the AcrPull grants in
+# the container examples; image-publishing identities need their own push permissions.
+# Important: Basic uses an authenticated public endpoint. Private networking requires
+# a supporting SKU such as Premium plus registry endpoints/DNS. This resource builds
+# or uploads no images, and the registry's capacity remains billable when idle.
 resource "azurerm_container_registry" "this" {
   name                          = var.name
   resource_group_name           = var.resource_group_name

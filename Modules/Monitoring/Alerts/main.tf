@@ -8,6 +8,11 @@ terraform {
   }
 }
 
+# Purpose: Define the operations notification destination used by the metric alert.
+# Creation: AzureRM creates an action group with the configured email receiver and
+# common alert schema. The rule below references its ID after the group exists.
+# Important: Supply a real monitored mailbox and validate receipt/response procedures.
+# Creating an action group alone does not monitor a metric or resolve incidents.
 resource "azurerm_monitor_action_group" "this" {
   name                = "${var.name}-action"
   resource_group_name = var.resource_group_name
@@ -21,6 +26,13 @@ resource "azurerm_monitor_action_group" "this" {
   }
 }
 
+# Purpose: Notify operations when the selected resource exceeds an error-count threshold.
+# Creation: Create a severity-2 alert on target_resource_id, evaluate once per minute,
+# and compare the metric's five-minute Total with var.threshold using GreaterThan.
+# The action_group_id reference connects qualifying alerts to the email group above.
+# Important: The target must emit the chosen metric namespace/name with supported
+# aggregation. This is an Azure Monitor metric alert, not a Log Analytics query or
+# an application health fix. Review alert costs, noise and incident ownership.
 resource "azurerm_monitor_metric_alert" "this" {
   name                = var.name
   resource_group_name = var.resource_group_name
