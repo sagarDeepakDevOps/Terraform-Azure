@@ -1,8 +1,8 @@
 # Terraform on Azure: Modular Reference Project
 
-A GitHub-ready teaching project for explaining Azure infrastructure as code to a client. It contains **57 reusable modules**, **11 independently deployable examples**, a separate remote-state bootstrap, and **23 credential-free mocked test runs**.
+A GitHub-ready teaching project for explaining Azure infrastructure as code to a client. It contains **57 reusable modules**, a **three-module root starter**, **11 independently deployable examples**, a separate remote-state bootstrap, and **25 credential-free mocked test runs**.
 
-Start with [Docs/PRESENTATION-GUIDE.md](Docs/PRESENTATION-GUIDE.md) for the client session and [Docs/SERVICE-CATALOG.md](Docs/SERVICE-CATALOG.md) for the complete implemented service list.
+Start with [main.tf](main.tf) for a short, commented module walkthrough and [Docs/SERVICE-CATALOG.md](Docs/SERVICE-CATALOG.md) for the complete implemented service list.
 
 **This is a reference and demonstration project, not a production landing zone.** It covers the main Azure infrastructure and application-platform families, not literally every product or SKU in Azure. Paid services, private networking, regional quotas, application deployment and customer-specific security decisions still need review. Nothing is deployed just by opening or testing the repository.
 
@@ -10,6 +10,14 @@ Start with [Docs/PRESENTATION-GUIDE.md](Docs/PRESENTATION-GUIDE.md) for the clie
 
 ```text
 Terraform-Azure/
+|-- main.tf
+|-- providers.tf
+|-- versions.tf
+|-- variables.tf
+|-- outputs.tf
+|-- terraform.tfvars.example
+|-- .terraform.lock.hcl
+|-- tests/root.tftest.hcl
 |-- Modules/
 |   |-- ResourceGroups/
 |   |-- VMS/
@@ -97,12 +105,38 @@ Terraform-Azure/
 
 The case-sensitive names follow the requested `Modules/VMS`, `Modules/LoadBalancers`, and nested `Modules/Vnet` structure. The VNet module creates its child subnets. Other network modules live under Vnet but are composed explicitly by each example; creating a VNet never silently creates a paid firewall or gateway.
 
-Each module has resource definitions, typed inputs with descriptions, outputs, and a provider compatibility declaration. Each example has its own provider configuration, input sample, outputs, tests, dependency lock file and README. There is deliberately **no deploy-everything root configuration**.
+Each module has resource definitions, typed inputs with descriptions, outputs, and a provider compatibility declaration. Each example has its own provider configuration, input sample, outputs, tests, dependency lock file and README. The repository root now contains a small runnable starter, not a **deploy-everything configuration**.
+
+## Root Starter Example
+
+Open [main.tf](main.tf) to see three real module calls:
+
+1. **ResourceGroups** creates a dedicated resource group.
+2. **Vnet** uses that group's outputs to create a VNet and a nested `workload` subnet.
+3. **NSG** uses the subnet output to attach an internal-HTTPS allow rule and an explicit inbound deny.
+
+The default address space is `10.120.0.0/16`, with subnet `10.120.1.0/24` and resource prefix `aztfroot`. No VM, public IP, NAT gateway, firewall, database or application is created. Terraform loads only this directory's configuration; it does not automatically deploy the numbered examples or every module beneath it.
+
+| Root file | Responsibility |
+| --- | --- |
+| [main.tf](main.tf) | Three commented module calls and their dependencies |
+| [providers.tf](providers.tf) | AzureRM authentication context and explicit registration behavior |
+| [versions.tf](versions.tf) | Compatible Terraform and AzureRM versions |
+| [variables.tf](variables.tf) | Prefix, region, VNet/subnet CIDRs and tags |
+| [terraform.tfvars.example](terraform.tfvars.example) | Non-secret sample overrides; the `.example` suffix is not loaded automatically |
+| [outputs.tf](outputs.tf) | Created group/network names, subnet IDs and NSG ID |
+| [tests/root.tftest.hcl](tests/root.tftest.hcl) | Credential-free tests of default and customized module inputs |
+| [.terraform.lock.hcl](.terraform.lock.hcl) | Exact root provider selection and checksums; retain in Git |
+
+Keep the root starter's state independent from the numbered examples and state bootstrap. If using a remote backend, give this root its own key, for example `demo/root-starter.tfstate`. Refer to [Templates/backend.tf.example](Templates/backend.tf.example) and [Templates/backend.hcl.example](Templates/backend.hcl.example) for the optional backend setup; the starter does not require an existing backend for local validation.
+
+To use another service later, select its exact module directory, read its input descriptions, add a `module` call with `source = "./Modules/YourSelectedService"`, and pass the required values or other module outputs. The detailed numbered examples demonstrate those service-specific prerequisites. Adding a module to this root can add costs and affect its state, so review the resulting plan.
 
 ## Choose an Example
 
 | Example | Default scenario | Optional additions |
 | --- | --- | --- |
+| [main.tf](main.tf) | Root starter: resource group, one VNet/subnet and an attached NSG | Extend by explicitly calling another service module |
 | [Examples/01-network-foundation/README.md](Examples/01-network-foundation/README.md) | Hub/spoke VNets, subnets, peering, NSG, route table, private DNS | No paid gateway or VM |
 | [Examples/02-compute/README.md](Examples/02-compute/README.md) | Two private Linux web VMs, public Standard Load Balancer, NAT | Windows, autoscaling VMSS, VM Backup |
 | [Examples/03-secure-hub/README.md](Examples/03-secure-hub/README.md) | Standard Azure Firewall, policy, routed spoke | Standard Bastion, VPN Gateway, site-to-site connection |
@@ -124,10 +158,10 @@ Use Terraform 1.9 or newer, below 2.0. The local and CI verification baseline is
 From this project directory:
 
 ```bash
-bash scripts/validate.sh 01-network-foundation
+bash scripts/validate.sh root
 ```
 
-Check the entire project:
+Use a numbered example name instead of `root` to check that example, or `state` for the backend bootstrap. Check all 13 deployment roots:
 
 ```bash
 bash scripts/validate.sh
@@ -137,31 +171,31 @@ The script checks formatting, initializes without a remote backend, validates, a
 
 ## Deploy Deliberately
 
-Read [Docs/DEPLOYMENT.md](Docs/DEPLOYMENT.md) and [Docs/SECURITY-AND-COST.md](Docs/SECURITY-AND-COST.md) before using a real subscription. Start with the network foundation. Do not apply every example for a presentation.
+Read [Docs/DEPLOYMENT.md](Docs/DEPLOYMENT.md) and [Docs/SECURITY-AND-COST.md](Docs/SECURITY-AND-COST.md) before using a real subscription. Start with the small root starter or the numbered network foundation. Do not apply every example for a presentation.
 
 After Azure login, subscription selection, provider registration, input review and cost approval:
 
 ```bash
-terraform -chdir=Examples/01-network-foundation init
-terraform -chdir=Examples/01-network-foundation plan -out=demo.tfplan
-terraform -chdir=Examples/01-network-foundation apply demo.tfplan
+terraform init
+terraform plan -out=demo.tfplan
+terraform apply demo.tfplan
 ```
 
-Applying a saved plan performs its approved changes without another confirmation. Do not run the final command until the plan has been reviewed. Plans and state can contain secrets and must not be published.
+Run these commands from the repository root for the three-module starter. To deploy a numbered example instead, use its directory or Terraform's `-chdir=Examples/<name>` option. Applying a saved plan performs its approved changes without another confirmation. Do not run the final command until the plan has been reviewed. Plans and state can contain secrets and must not be published.
 
 ## A Small Code Example for Slides
 
-This is the module interface used by the networking examples:
+This excerpt from the root starter demonstrates passing one module's outputs into another:
 
 ```hcl
-module "hub" {
-  source              = "../../Modules/Vnet"
-  name                = "demo-hub-vnet"
+module "network" {
+  source              = "./Modules/Vnet"
+  name                = "${var.prefix}-vnet"
   resource_group_name = module.resource_group.name
   location            = module.resource_group.location
-  address_space       = ["10.10.0.0/16"]
+  address_space       = [var.vnet_cidr]
   subnets = {
-    shared = { address_prefixes = ["10.10.1.0/24"] }
+    workload = { address_prefixes = [var.workload_subnet_cidr] }
   }
 }
 ```
@@ -178,7 +212,6 @@ No remote repository is assumed or configured. After publishing, use GitHub perm
 
 - [Docs/SERVICE-CATALOG.md](Docs/SERVICE-CATALOG.md): every implemented module and its demo boundary.
 - [Docs/ARCHITECTURE.md](Docs/ARCHITECTURE.md): GitHub-renderable Mermaid diagrams and network flow explanations.
-- [Docs/PRESENTATION-GUIDE.md](Docs/PRESENTATION-GUIDE.md): slide outline, short excerpts, speaker notes and client questions.
 - [Docs/DEPLOYMENT.md](Docs/DEPLOYMENT.md): authentication, registrations, inputs, state and troubleshooting.
 - [Docs/SECURITY-AND-COST.md](Docs/SECURITY-AND-COST.md): security choices, cost drivers, cleanup and production gaps.
 - [Modules/README.md](Modules/README.md): module contracts and how to extend the project.
@@ -186,7 +219,7 @@ No remote repository is assumed or configured. After publishing, use GitHub perm
 
 ## Verification Status
 
-All 12 roots passed `terraform validate`; all 23 mocked test runs passed with the versions above. Recursive formatting and Bash syntax checks passed. No live Azure plan, apply, destroy, application smoke test or cloud security certification was performed. A client-specific pilot deployment remains a separate acceptance step.
+All 13 roots, including the repository-root starter, passed `terraform validate`; all 25 mocked test runs passed with the versions above. Recursive formatting and Bash syntax checks passed. No live Azure plan, apply, destroy, application smoke test or cloud security certification was performed. A client-specific pilot deployment remains a separate acceptance step.
 
 
 ## Questions and Answers
@@ -205,4 +238,4 @@ All 12 roots passed `terraform validate`; all 23 mocked test runs passed with th
 
 **Do passing tests prove Azure will deploy it?** They prove the tested Terraform contracts and schema checks passed. A real pilot is still needed for permissions, quotas, region/SKU constraints, private connectivity and runtime behavior.
 
-**Is this production-ready as-is?** No. It is teaching/reference code. Use the production acceptance checklist in [Docs/SECURITY-AND-COST.md](SECURITY-AND-COST.md) to define the customer's pilot and implementation work.
+**Is this production-ready as-is?** No. It is teaching/reference code. Use the production acceptance checklist in [Docs/SECURITY-AND-COST.md](Docs/SECURITY-AND-COST.md) to define the customer's pilot and implementation work.

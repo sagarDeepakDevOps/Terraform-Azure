@@ -1,6 +1,6 @@
 # Module Design
 
-These are reusable child modules, not directories intended for direct `terraform apply`. Choose an [example](../README.md#choose-an-example) as the root configuration.
+These are reusable child modules, not directories intended for direct `terraform apply`. Start with the three-module caller in [main.tf](../main.tf), or choose a [numbered example](../README.md#choose-an-example) as the root configuration. Root sources use `./Modules/...`; numbered examples use `../../Modules/...` because their calling directories are different.
 
 ## File Contract
 

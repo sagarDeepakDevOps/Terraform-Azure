@@ -7,11 +7,14 @@ Use Bash and Terraform 1.9 or later, below 2.0; the tested CLI is 1.15.8. The te
 From the project root:
 
 ```bash
+bash scripts/validate.sh root
 bash scripts/validate.sh 01-network-foundation
 bash scripts/validate.sh
 ```
 
-The first command checks a single example; the second checks all examples and the state bootstrap. All roots use local state until a backend is deliberately configured. Tests use Terraform's isolated in-memory mock state, not your deployed resource state.
+The first command checks the three-module repository-root starter, the second checks one numbered example, and the third checks all 13 deployment roots, including the state bootstrap. All roots use local state until a backend is deliberately configured. Tests use Terraform's isolated in-memory mock state, not your deployed resource state.
+
+The starter in [main.tf](../main.tf) calls ResourceGroups, Vnet and NSG with local `./Modules/...` sources. It creates one group, one VNet with a nested workload subnet, and its NSG association. It does not automatically load every module or numbered example. Adjust its [terraform.tfvars.example](../terraform.tfvars.example) inputs in a local variable file when preparing a real deployment; the `.example` suffix is not loaded automatically. Keep its VNet/subnet CIDRs consistent.
 
 For a deliberate provider upgrade, update the constraint, run `terraform init -upgrade` in the affected roots, review the changed lock files and rerun the tests. The normal validation script uses `-lockfile=readonly`.
 
@@ -36,6 +39,7 @@ Example providers use `resource_provider_registrations = "none"` to avoid silent
 
 | Example | Main required namespaces |
 | --- | --- |
+| Root starter | `Microsoft.Network` |
 | 01 | `Microsoft.Network` |
 | 02 | `Microsoft.Network`, `Microsoft.Compute`, `Microsoft.Insights`; `Microsoft.RecoveryServices` for backup |
 | 03 | `Microsoft.Network` |
@@ -77,7 +81,9 @@ Supply Windows passwords, VPN shared keys and PFX material through your approved
 
 ## 5. Plan, Review, Apply
 
-These commands create real resources only at the apply step:
+For the three-module starter, run `terraform init`, `terraform validate`, and `terraform plan -out=demo.tfplan` from the repository root. Review with `terraform show demo.tfplan` before an approved `terraform apply demo.tfplan`. This root owns its own state and does not deploy the numbered examples.
+
+To select the larger numbered network example instead, use the explicit directory below. These commands create real resources only at the apply step:
 
 ```bash
 terraform -chdir=Examples/01-network-foundation init
@@ -110,7 +116,7 @@ For Synapse, first deploy with `enable_synapse = true` and `configure_synapse_ma
 
 Follow [Bootstrap/state/README.md](../Bootstrap/state/README.md). The backend must already exist before Terraform can initialize it; do not make an example depend on creating its own backend.
 
-The [Templates/backend.tf.example](../Templates/backend.tf.example) declares the backend, and [Templates/backend.hcl.example](../Templates/backend.hcl.example) supplies non-secret account/container/key settings. Use a unique state key per example and environment. `use_azuread_auth = true` means backend writers need Storage Blob Data Contributor at the state container scope and a permitted network path.
+The [Templates/backend.tf.example](../Templates/backend.tf.example) declares the backend, and [Templates/backend.hcl.example](../Templates/backend.hcl.example) supplies non-secret account/container/key settings. Use a unique state key per example and environment, including a separate key such as `demo/root-starter.tfstate` for the repository root. `use_azuread_auth = true` means backend writers need Storage Blob Data Contributor at the state container scope and a permitted network path.
 
 For OIDC deployment workflows, both backend and provider authentication must be configured. Typical non-secret identity settings are `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID` and `ARM_USE_OIDC=true`; the workflow needs `id-token: write` and an Entra federated credential with the correct GitHub subject. The included validation workflow intentionally has neither Azure identity nor deployment permissions.
 

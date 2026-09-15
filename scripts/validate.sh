@@ -11,12 +11,14 @@ fi
 terraform -chdir="$project_root" fmt -check -recursive
 
 if [[ $# -gt 1 ]]; then
-  printf 'Usage: bash scripts/validate.sh [example-name|state]\n' >&2
+  printf 'Usage: bash scripts/validate.sh [root|example-name|state]\n' >&2
   exit 1
 fi
 
 if [[ $# -eq 0 ]]; then
-  roots=("$project_root"/Examples/* "$project_root/Bootstrap/state")
+  roots=("$project_root" "$project_root"/Examples/* "$project_root/Bootstrap/state")
+elif [[ "$1" == "root" ]]; then
+  roots=("$project_root")
 elif [[ "$1" == "state" ]]; then
   roots=("$project_root/Bootstrap/state")
 elif [[ "$1" =~ ^[0-9]{2}-[a-z-]+$ && -d "$project_root/Examples/$1" ]]; then
@@ -27,7 +29,11 @@ else
 fi
 
 for root in "${roots[@]}"; do
-  printf '\nChecking %s\n' "${root#"$project_root/"}"
+  root_label="${root#"$project_root/"}"
+  if [[ "$root" == "$project_root" ]]; then
+    root_label="root starter"
+  fi
+  printf '\nChecking %s\n' "$root_label"
   terraform -chdir="$root" init -backend=false -input=false -lockfile=readonly -no-color
   terraform -chdir="$root" validate -no-color
   terraform -chdir="$root" test -no-color

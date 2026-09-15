@@ -1,0 +1,15 @@
+# Non-secret sample inputs for the root starter, not the numbered examples.
+# Terraform does not load the .example suffix automatically. Use a local .tfvars
+# file or TF_VAR_* variables to override defaults, and never commit real secrets.
+prefix               = "aztfroot"
+location             = "eastus2"
+vnet_cidr            = "10.120.0.0/16"
+workload_subnet_cidr = "10.120.1.0/24"
+
+tags = {
+  environment = "demo"
+  project     = "terraform-azure"
+  example     = "root-starter"
+  managed_by  = "terraform"
+  owner       = "platform-team"
+}
