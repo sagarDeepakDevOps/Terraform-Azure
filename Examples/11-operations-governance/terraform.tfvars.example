@@ -1,0 +1,8 @@
+prefix   = "aztfops"
+location = "eastus2"
+
+enable_budget               = false
+enable_lock                 = false
+enable_sentinel             = false
+enable_subscription_defender = false
+enforce_policy              = false

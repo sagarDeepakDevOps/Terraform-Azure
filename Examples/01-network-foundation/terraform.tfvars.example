@@ -1,0 +1,9 @@
+prefix   = "aztfnet"
+location = "eastus2"
+
+tags = {
+  environment = "demo"
+  project     = "terraform-azure"
+  managed_by  = "terraform"
+  owner       = "platform-team"
+}

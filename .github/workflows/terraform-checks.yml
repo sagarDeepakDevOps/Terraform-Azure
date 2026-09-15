@@ -1,0 +1,35 @@
+name: Terraform checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Format, validate and mock-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.15.8
+          terraform_wrapper: false
+      - name: Configure provider download cache
+        run: |
+          mkdir -p "$RUNNER_TEMP/terraform-plugin-cache"
+          printf 'TF_PLUGIN_CACHE_DIR=%s/terraform-plugin-cache\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - name: Check all examples without Azure credentials
+        run: bash scripts/validate.sh

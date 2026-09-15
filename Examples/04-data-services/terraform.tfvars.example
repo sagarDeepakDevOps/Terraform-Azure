@@ -1,0 +1,10 @@
+prefix   = "aztfdata"
+location = "eastus2"
+
+databases = {
+  sql        = true
+  postgresql = false
+  mysql      = false
+  cosmos     = false
+  redis      = false
+}

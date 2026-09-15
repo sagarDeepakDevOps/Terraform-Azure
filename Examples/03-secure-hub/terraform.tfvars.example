@@ -1,0 +1,4 @@
+prefix         = "aztfhub"
+location       = "eastus2"
+enable_bastion = false
+enable_vpn     = false

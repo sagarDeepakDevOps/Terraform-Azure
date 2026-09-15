@@ -1,0 +1,5 @@
+resource_group_name  = "REPLACE_WITH_STATE_RESOURCE_GROUP"
+storage_account_name = "REPLACE_WITH_STATE_ACCOUNT_NAME"
+container_name       = "tfstate"
+key                  = "demo/01-network-foundation.tfstate"
+use_azuread_auth      = true

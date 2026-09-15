@@ -1,0 +1,5 @@
+prefix           = "aztfvm"
+location         = "eastus2"
+enable_windows   = false
+enable_scale_set = false
+enable_backup    = false
