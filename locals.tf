@@ -15,6 +15,9 @@ locals {
     }
   ]...)
 
+  # First jump-role VM with a public address; the hop used to reach private VMs.
+  jump_vm = try([for name, vm in var.vms : name if vm.role == "jump" && vm.public_ip_enabled][0], null)
+
   nat_subnets = { for key, subnet in local.subnets : key => subnet if subnet.nat_gateway_enabled }
 
   # Resolves each VM's subnet and turns its role into the flags the VM module takes.

@@ -55,9 +55,13 @@ output "ssh_commands" {
 }
 
 output "private_ssh_commands" {
-  description = "How to reach every VM by private address once you are on a jump host."
+  description = "Reaching private VMs from your laptop through the jump host, with the key never leaving your machine. ProxyCommand rather than -J because ssh does not pass -i to the jump hop, so -J would try your default ~/.ssh keys there and be refused."
   value = {
-    for name, ip in module.vms.private_ip_addresses :
-    name => "ssh -i ~/${basename(module.vms.private_key_path)} ${var.admin_username}@${ip}"
+    for name, vm in var.vms : name => join(" ", [
+      "ssh -i ${module.vms.private_key_path}",
+      "-o ProxyCommand='ssh -i ${module.vms.private_key_path} -W %h:%p ${var.admin_username}@${module.vms.public_ip_addresses[local.jump_vm]}'",
+      "${var.admin_username}@${module.vms.private_ip_addresses[name]}",
+    ])
+    if !vm.public_ip_enabled
   }
 }

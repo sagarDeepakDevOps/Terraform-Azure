@@ -109,6 +109,14 @@ vnets = {
             destination_port_range = "22"
             source_address_prefix  = "VirtualNetwork"
           }
+          # Lets you curl the backend privately from the jump host. The rule above
+          # for port 80 uses the Internet tag, which a private 10.x source never
+          # matches, so without this the jump host is dropped by the final deny.
+          allow_http_from_vnets = {
+            priority               = 140
+            destination_port_range = "80"
+            source_address_prefix  = "VirtualNetwork"
+          }
           # Everything else is dropped. Keep last.
           deny_other_inbound = {
             priority               = 4096
