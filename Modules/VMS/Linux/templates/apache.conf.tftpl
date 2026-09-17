@@ -1,0 +1,20 @@
+# First host is the default and answers direct hits; the second matches the load balancer's Host header.
+<VirtualHost *:80>
+    ServerName ${vm_server_name}
+    DocumentRoot /var/www/direct
+    DirectoryIndex index.html
+    <Directory /var/www/direct>
+        Require all granted
+        Options -Indexes
+    </Directory>
+</VirtualHost>
+
+<VirtualHost *:80>
+    ServerName ${lb_server_name}
+    DocumentRoot /var/www/via-lb
+    DirectoryIndex index.html
+    <Directory /var/www/via-lb>
+        Require all granted
+        Options -Indexes
+    </Directory>
+</VirtualHost>

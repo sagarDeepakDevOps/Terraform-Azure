@@ -15,8 +15,14 @@ variable "location" {
 
 variable "backend_nic_ids" {
   type        = map(string)
-  description = "VM NICs with an IP configuration named primary. VMSS attaches its own pool membership."
+  description = "VM NICs with an IP configuration named primary, keyed by plan-time known names. All of them must be in one VNet."
   default     = {}
+}
+
+variable "domain_name_label" {
+  type        = string
+  description = "Optional DNS label for the frontend, producing <label>.<region>.cloudapp.azure.com. Must be unique across the whole region."
+  default     = null
 }
 
 variable "frontend_port" {

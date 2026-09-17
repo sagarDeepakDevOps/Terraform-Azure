@@ -1,0 +1,23 @@
+#cloud-config
+# Runs on first boot only and needs outbound Internet for apt; apply returns before it finishes.
+package_update: true
+packages:
+  - apache2
+write_files:
+  - path: /etc/apache2/sites-available/demo.conf
+    permissions: '0644'
+    content: |
+      ${indent(6, apache_conf)}
+  - path: /var/www/direct/index.html
+    permissions: '0644'
+    content: |
+      ${indent(6, direct_html)}
+  - path: /var/www/via-lb/index.html
+    permissions: '0644'
+    content: |
+      ${indent(6, via_lb_html)}
+runcmd:
+  - [ a2dissite, 000-default ]
+  - [ a2ensite, demo ]
+  - [ systemctl, enable, --now, apache2 ]
+  - [ systemctl, reload, apache2 ]

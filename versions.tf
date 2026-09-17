@@ -1,8 +1,4 @@
-# Purpose: Define the CLI/provider compatibility for this independently deployable root.
-# Initialization: terraform init resolves a single compatible AzureRM version across
-# these module calls, and .terraform.lock.hcl records its exact version/checksums.
-# Important: Child modules declare compatibility; this root selects the tested minor
-# release. Keep its lock file in Git and review upgrades before changing the constraint.
+# The root selects tested provider versions; .terraform.lock.hcl records exact checksums.
 terraform {
   required_version = ">= 1.9.0, < 2.0.0"
 
@@ -10,6 +6,14 @@ terraform {
     azurerm = {
       source  = "hashicorp/azurerm"
       version = "~> 4.81.0"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.1"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.5"
     }
   }
 }

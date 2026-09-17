@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hello from ${vm_name}</title>
+  <style>
+    body { margin: 2rem auto; padding: 0 1rem; max-width: 42rem; font-family: Verdana, sans-serif; color: #182026; background: #f4f7f9; line-height: 1.6; }
+    h1 { color: #0067a5; }
+    dt { margin-top: 1rem; font-weight: bold; }
+    dd { margin-left: 0; overflow-wrap: anywhere; }
+    code { font-size: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Hello World!</h1>
+  <p>Apache on <strong>${vm_name}</strong></p>
+  <dl>
+    <dt>Access path</dt><dd>${entry_label}</dd>
+    <dt>Entry-point public IP</dt><dd><code>${entry_ip}</code></dd>
+    <dt>Backend VM</dt><dd>${vm_name}</dd>
+    <dt>Backend private IP</dt><dd><code>${private_ip}</code></dd>
+  </dl>
+</body>
+</html>

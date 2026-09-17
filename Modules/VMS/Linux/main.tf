@@ -5,15 +5,44 @@ terraform {
       source  = "hashicorp/azurerm"
       version = ">= 4.81.0, < 5.0.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = ">= 4.0.0, < 5.0.0"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = ">= 2.5.0, < 3.0.0"
+    }
   }
 }
 
-# Purpose: Give the Linux VM a private network interface in the workload subnet.
-# Creation: Azure creates a NIC with an IP configuration named primary and allocates
-# an available private address from subnet_id. The VM below references this NIC ID,
-# which makes Terraform create the NIC before attaching it to the virtual machine.
-# Security: No public_ip_address_id is configured. Connectivity depends on subnet
-# NSGs/routes and an explicit egress or administration path supplied by the caller.
+# This VM's own key pair; RSA because Azure's admin_ssh_key expects ssh-rsa.
+resource "tls_private_key" "this" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+# Writes the private key to the project root so ssh -i works immediately; it is also held in state in plaintext.
+resource "local_sensitive_file" "private_key" {
+  filename        = local.private_key_path
+  content         = tls_private_key.this.private_key_pem
+  file_permission = "0600"
+}
+
+# Exposes the VM directly and gives cloud-init the outbound path it needs to install Apache.
+resource "azurerm_public_ip" "this" {
+  count = var.public_ip_enabled ? 1 : 0
+
+  name                = "${var.name}-pip"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+  allocation_method   = "Static"
+  sku                 = "Standard"
+  domain_name_label   = var.domain_name_label
+  tags                = var.tags
+}
+
+# The load balancer pools this interface by the IP configuration name primary; renaming it breaks that.
 resource "azurerm_network_interface" "this" {
   name                = "${var.name}-nic"
   resource_group_name = var.resource_group_name
@@ -24,21 +53,11 @@ resource "azurerm_network_interface" "this" {
     name                          = "primary"
     subnet_id                     = var.subnet_id
     private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = var.public_ip_enabled ? azurerm_public_ip.this[0].id : null
   }
 }
 
-# Purpose: Provision an Ubuntu 22.04 Gen2 workload VM with private networking.
-# Creation: Azure uses the requested size, the NIC above, a Standard SSD managed
-# OS disk and the selected marketplace image to build the VM. The public SSH key
-# is installed for admin_username; password authentication is disabled.
-# Startup: custom_data must already be base64-encoded. Azure passes it to the
-# guest's cloud-init; Terraform does not run those guest commands itself. If they
-# install packages, wait for the caller's NAT/NSG setup and verify guest completion.
-# Security: Secure Boot, vTPM, a system-assigned identity and managed boot diagnostics
-# are enabled. The identity has no workload data rights until separately granted.
-# Important: Confirm image/size compatibility and quota. The latest image selector
-# is a demo convenience, not an immutable production pin. VM/disks are billable,
-# and VM creation alone does not guarantee that the application is serving traffic.
+# Ubuntu 22.04 serving the Apache demo page; apply returns before cloud-init finishes, so allow about a minute.
 resource "azurerm_linux_virtual_machine" "this" {
   name                            = var.name
   resource_group_name             = var.resource_group_name
@@ -47,14 +66,14 @@ resource "azurerm_linux_virtual_machine" "this" {
   admin_username                  = var.admin_username
   disable_password_authentication = true
   network_interface_ids           = [azurerm_network_interface.this.id]
-  custom_data                     = var.custom_data
+  custom_data                     = base64encode(local.cloud_init)
   secure_boot_enabled             = true
   vtpm_enabled                    = true
   tags                            = var.tags
 
   admin_ssh_key {
     username   = var.admin_username
-    public_key = var.ssh_public_key
+    public_key = tls_private_key.this.public_key_openssh
   }
 
   os_disk {
