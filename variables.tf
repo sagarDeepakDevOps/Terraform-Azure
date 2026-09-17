@@ -21,21 +21,54 @@ variable "vnets" {
   type = map(object({
     address_space = list(string)
     subnets = map(object({
-      address_prefixes = list(string)
+      address_prefixes    = list(string)
+      nat_gateway_enabled = optional(bool, false)
+      nsg_rules = optional(map(object({
+        priority                   = number
+        direction                  = optional(string, "Inbound")
+        access                     = optional(string, "Allow")
+        protocol                   = optional(string, "Tcp")
+        destination_port_range     = string
+        source_address_prefix      = string
+        destination_address_prefix = optional(string, "*")
+      })), {})
     }))
   }))
-  description = "Virtual networks keyed by short name. Each key names one network and one NSG; subnet keys become Azure subnet names."
+  description = "Virtual networks keyed by short name. Every subnet gets its own NSG carrying only that subnet's nsg_rules, plus a NAT gateway when nat_gateway_enabled is set."
   default = {
     lb = {
       address_space = ["10.10.0.0/16"]
       subnets = {
-        frontend = { address_prefixes = ["10.10.1.0/24"] }
+        frontend = {
+          address_prefixes = ["10.10.1.0/24"]
+          nsg_rules = {
+            deny_other_inbound = {
+              priority               = 4096
+              access                 = "Deny"
+              protocol               = "*"
+              destination_port_range = "*"
+              source_address_prefix  = "*"
+            }
+          }
+        }
       }
     }
     workload = {
       address_space = ["10.20.0.0/16"]
       subnets = {
-        web = { address_prefixes = ["10.20.1.0/24"] }
+        web = {
+          address_prefixes    = ["10.20.1.0/24"]
+          nat_gateway_enabled = true
+          nsg_rules = {
+            deny_other_inbound = {
+              priority               = 4096
+              access                 = "Deny"
+              protocol               = "*"
+              destination_port_range = "*"
+              source_address_prefix  = "*"
+            }
+          }
+        }
       }
     }
   }
@@ -48,6 +81,21 @@ variable "vnets" {
   validation {
     condition     = alltrue([for vnet in var.vnets : alltrue([for subnet in vnet.subnets : alltrue([for cidr in subnet.address_prefixes : can(cidrnetmask(cidr))])])])
     error_message = "Every subnet address_prefixes entry must be a valid IPv4 CIDR."
+  }
+
+  validation {
+    condition     = alltrue([for vnet in var.vnets : alltrue([for subnet in vnet.subnets : alltrue([for rule in subnet.nsg_rules : rule.priority >= 100 && rule.priority <= 4096])])])
+    error_message = "NSG rule priorities must be between 100 and 4096."
+  }
+
+  validation {
+    condition     = alltrue([for vnet in var.vnets : alltrue([for subnet in vnet.subnets : length(distinct([for rule in subnet.nsg_rules : "${rule.direction}:${rule.priority}"])) == length(subnet.nsg_rules)])])
+    error_message = "Within one subnet's nsg_rules each priority must be unique per direction; Azure rejects duplicates."
+  }
+
+  validation {
+    condition     = alltrue([for vnet in var.vnets : alltrue([for subnet in vnet.subnets : alltrue([for rule in subnet.nsg_rules : contains(["Inbound", "Outbound"], rule.direction) && contains(["Allow", "Deny"], rule.access)])])])
+    error_message = "direction must be Inbound or Outbound, and access must be Allow or Deny."
   }
 }
 
@@ -74,19 +122,27 @@ variable "vms" {
   type = map(object({
     vnet_key          = string
     subnet_key        = string
-    size              = optional(string, "Standard_B1s")
+    role              = optional(string, "web")
+    size              = optional(string, "Standard_D2ls_v7")
+    public_ip_enabled = optional(bool, true)
     domain_name_label = optional(string)
   }))
-  description = "Apache web servers keyed by short name. A public load balancer pool takes its network from its NICs, so all VMs must share one vnet_key."
+  description = "VMs keyed by short name. Role web runs Apache behind the load balancer; role jump is a plain host for reaching the others privately."
   default = {
     web1 = {
       vnet_key   = "workload"
       subnet_key = "web"
     }
-    web2 = {
-      vnet_key   = "workload"
-      subnet_key = "web"
+    jump = {
+      vnet_key   = "lb"
+      subnet_key = "frontend"
+      role       = "jump"
     }
+  }
+
+  validation {
+    condition     = alltrue([for vm in var.vms : contains(["web", "jump"], vm.role)])
+    error_message = "Each VM's role must be either web or jump."
   }
 
   validation {
@@ -95,8 +151,8 @@ variable "vms" {
   }
 
   validation {
-    condition     = length(distinct([for vm in var.vms : vm.vnet_key])) <= 1
-    error_message = "All VMs must share one vnet_key; a Standard public load balancer cannot pool backends from more than one VNet."
+    condition     = length(distinct([for vm in var.vms : vm.vnet_key if vm.role == "web"])) <= 1
+    error_message = "All web VMs must share one vnet_key; a Standard public load balancer cannot pool backends from more than one VNet."
   }
 }
 
@@ -106,15 +162,9 @@ variable "admin_username" {
   default     = "azureuser"
 }
 
-variable "ssh_source_address_prefix" {
-  type        = string
-  description = "Source CIDR or IP allowed to reach port 22. Null leaves SSH closed; avoid \"*\"."
-  default     = null
-}
-
 variable "http_port" {
   type        = number
-  description = "Port Apache serves on and the load balancer listens and probes on. Plain HTTP; carry no credentials or real data."
+  description = "Port Apache serves on and the load balancer listens and probes on. Changing it also means updating the matching port in nsg_rules. Plain HTTP; carry no credentials or real data."
   default     = 80
 }
 

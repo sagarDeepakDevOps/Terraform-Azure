@@ -1,6 +1,17 @@
-variable "name" {
+variable "vms" {
+  type = map(object({
+    subnet_id         = string
+    size              = optional(string, "Standard_D2ls_v7")
+    install_apache    = optional(bool, true)
+    public_ip_enabled = optional(bool, true)
+    domain_name_label = optional(string)
+  }))
+  description = "VMs keyed by short name; the key is appended to name_prefix to name the VM, NIC and public IP. install_apache false leaves a plain host such as a jump box."
+}
+
+variable "name_prefix" {
   type        = string
-  description = "Linux VM name; also prefixes the NIC and public IP names."
+  description = "Prefix joined to each map key to build resource names."
 }
 
 variable "resource_group_name" {
@@ -13,33 +24,15 @@ variable "location" {
   description = "Azure region."
 }
 
-variable "subnet_id" {
-  type        = string
-  description = "Subnet for the NIC. Its NSG must allow the inbound ports this VM serves."
-}
-
-variable "size" {
-  type        = string
-  description = "VM size; availability is per subscription and region, so confirm with az vm list-skus before changing."
-  default     = "Standard_D2ls_v7"
-}
-
 variable "admin_username" {
   type        = string
-  description = "Local administrator username."
+  description = "Local administrator username. Password login is disabled; only the generated key can log in."
   default     = "azureuser"
 }
 
-variable "public_ip_enabled" {
-  type        = bool
-  description = "Create an instance-level public IP. It exposes the VM to the Internet and is also the VM's outbound path for cloud-init package installs."
-  default     = true
-}
-
-variable "domain_name_label" {
+variable "private_key_path" {
   type        = string
-  description = "Optional DNS label for the VM public IP. Must be unique across the whole region, so an apply fails if another subscription already took it."
-  default     = null
+  description = "Where to write the one generated private key shared by every VM. Keep it out of version control."
 }
 
 variable "lb_fqdn" {

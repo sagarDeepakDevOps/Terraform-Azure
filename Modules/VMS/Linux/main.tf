@@ -16,64 +16,55 @@ terraform {
   }
 }
 
-# This VM's own key pair; RSA because Azure's admin_ssh_key expects ssh-rsa.
-resource "tls_private_key" "this" {
-  algorithm = "RSA"
-  rsa_bits  = 4096
-}
-
-# Writes the private key to the project root so ssh -i works immediately; it is also held in state in plaintext.
-resource "local_sensitive_file" "private_key" {
-  filename        = local.private_key_path
-  content         = tls_private_key.this.private_key_pem
-  file_permission = "0600"
-}
-
-# Exposes the VM directly and gives cloud-init the outbound path it needs to install Apache.
+# One per VM that asked for one; it exposes the VM and gives cloud-init its outbound path for apt.
 resource "azurerm_public_ip" "this" {
-  count = var.public_ip_enabled ? 1 : 0
+  for_each = { for key, vm in var.vms : key => vm if vm.public_ip_enabled }
 
-  name                = "${var.name}-pip"
+  name                = "${local.vm_names[each.key]}-pip"
   resource_group_name = var.resource_group_name
   location            = var.location
   allocation_method   = "Static"
   sku                 = "Standard"
-  domain_name_label   = var.domain_name_label
+  domain_name_label   = each.value.domain_name_label
   tags                = var.tags
 }
 
-# The load balancer pools this interface by the IP configuration name primary; renaming it breaks that.
+# The load balancer pools these interfaces by the IP configuration name primary; renaming it breaks that.
 resource "azurerm_network_interface" "this" {
-  name                = "${var.name}-nic"
+  for_each = var.vms
+
+  name                = "${local.vm_names[each.key]}-nic"
   resource_group_name = var.resource_group_name
   location            = var.location
   tags                = var.tags
 
   ip_configuration {
     name                          = "primary"
-    subnet_id                     = var.subnet_id
+    subnet_id                     = each.value.subnet_id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = var.public_ip_enabled ? azurerm_public_ip.this[0].id : null
+    public_ip_address_id          = try(azurerm_public_ip.this[each.key].id, null)
   }
 }
 
-# Ubuntu 22.04 serving the Apache demo page; apply returns before cloud-init finishes, so allow about a minute.
+# Ubuntu 22.04; VMs with install_apache serve the demo page, and apply returns before cloud-init finishes.
 resource "azurerm_linux_virtual_machine" "this" {
-  name                            = var.name
+  for_each = var.vms
+
+  name                            = local.vm_names[each.key]
   resource_group_name             = var.resource_group_name
   location                        = var.location
-  size                            = var.size
+  size                            = each.value.size
   admin_username                  = var.admin_username
   disable_password_authentication = true
-  network_interface_ids           = [azurerm_network_interface.this.id]
-  custom_data                     = base64encode(local.cloud_init)
+  network_interface_ids           = [azurerm_network_interface.this[each.key].id]
+  custom_data                     = local.custom_data[each.key]
   secure_boot_enabled             = true
   vtpm_enabled                    = true
   tags                            = var.tags
 
   admin_ssh_key {
     username   = var.admin_username
-    public_key = tls_private_key.this.public_key_openssh
+    public_key = tls_private_key.vms.public_key_openssh
   }
 
   os_disk {

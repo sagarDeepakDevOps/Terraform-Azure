@@ -19,13 +19,16 @@ output "peering_ids" {
 }
 
 output "vm_private_ips" {
-  description = "Backend private addresses, shown on both demo pages."
-  value       = { for name, vm in module.vms : name => vm.private_ip_address }
+  description = "Private addresses keyed by VM name; ping these from the jump host across the peering."
+  value       = module.vms.private_ip_addresses
 }
 
 output "vm_urls" {
-  description = "Direct per-VM URLs; each reports that VM's own public IP."
-  value       = { for name, vm in module.vms : name => "http://${coalesce(vm.public_ip_fqdn, vm.public_ip_address)}" }
+  description = "Direct URLs for VMs that have a public IP. Private backends are absent here by design; reach them through load_balancer_url or from the jump host."
+  value = {
+    for name, vm in var.vms : name => "http://${coalesce(module.vms.public_ip_fqdns[name], module.vms.public_ip_addresses[name])}"
+    if vm.role == "web" && vm.public_ip_enabled
+  }
 }
 
 output "load_balancer_public_ip" {
@@ -38,7 +41,23 @@ output "load_balancer_url" {
   value       = "http://${coalesce(module.load_balancer.public_ip_fqdn, module.load_balancer.public_ip_address)}"
 }
 
-output "ssh_private_key_paths" {
-  description = "Generated private key file per VM. Connect with: ssh -i <path> azureuser@<vm public ip>"
-  value       = { for name, vm in module.vms : name => vm.private_key_path }
+output "ssh_private_key_path" {
+  description = "The single generated private key, accepted by every VM in the lab."
+  value       = module.vms.private_key_path
+}
+
+output "ssh_commands" {
+  description = "SSH commands for VMs reachable from outside. Private VMs are absent; hop to them from a jump host with the same key, which the module already installed everywhere."
+  value = {
+    for name, vm in var.vms : name => "ssh -i ${module.vms.private_key_path} ${var.admin_username}@${module.vms.public_ip_addresses[name]}"
+    if vm.public_ip_enabled
+  }
+}
+
+output "private_ssh_commands" {
+  description = "How to reach every VM by private address once you are on a jump host."
+  value = {
+    for name, ip in module.vms.private_ip_addresses :
+    name => "ssh -i ~/${basename(module.vms.private_key_path)} ${var.admin_username}@${ip}"
+  }
 }
