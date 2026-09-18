@@ -35,6 +35,7 @@ Apply them in order. Each README explains what it builds and the traps in it.
 
 | # | Builds | Why it comes here |
 | --- | --- | --- |
+| [exercise0](exercise0/) | Remote state storage | Optional, and only useful before the rest |
 | [exercise1](exercise1/) | Resource group | Everything else needs somewhere to live |
 | [exercise2](exercise2/) | Virtual networks | Address space, before anything can use it |
 | [exercise3](exercise3/) | Subnets | Subnets are separate resources inside a VNet |
@@ -46,6 +47,24 @@ Apply them in order. Each README explains what it builds and the traps in it.
 
 Order matters. Exercise7's private VM cannot install Apache without exercise6,
 and exercise8 has nothing to load balance without exercise7.
+
+[exercise0](exercise0/) stands slightly apart. It builds no part of the network:
+it creates the Azure storage account that the other exercises can keep their
+state in, instead of each keeping a `terraform.tfstate` on your laptop. Skip it
+and everything still works with local state. Apply it and it has to come first,
+because a backend cannot be used before it exists.
+
+Two directories sit outside the numbered chain, because neither depends on the
+exercises before it:
+
+- [remote-backend-demo](remote-backend-demo/) builds two resource groups and
+  nothing else, with its state in the storage account exercise0 created. It is
+  the shortest complete example of a remote backend in this repository: how to
+  initialise one, how to prove the state really left your machine, what the lock
+  looks like when two people run Terraform at once.
+- [full-lab](full-lab/) builds the same network as exercises 1 to 8, but as a
+  single configuration with one state file, so you can see what changes when the
+  roots stop being separate.
 
 ## Before you start
 
@@ -112,6 +131,11 @@ by accident. `status` and `validate` always cover everything and take no target.
 | `1-4` | exercise1 through exercise4 |
 | `exercise3` | the full directory name also works |
 
+`all` includes exercise0, with one exception: `destroy all` leaves it alone,
+because removing the state storage while the other exercises still point at it
+would leave them with no state. Destroy it on its own when you mean it:
+`./run.sh destroy exercise0`.
+
 You can combine them, and repeats are ignored:
 
 ```bash
@@ -170,7 +194,8 @@ terraform output    # values the next exercise needs
 ```
 
 Each directory keeps its own `terraform.tfstate`. Nothing is shared between
-them except the names you carry forward.
+them except the names you carry forward. See [Where the state lives](#where-the-state-lives)
+to move those files into Azure instead.
 
 ## Carrying values between exercises
 
@@ -191,12 +216,59 @@ So two values must be identical in every exercise's `terraform.auto.tfvars`:
 - **`resource_group_name`** — from `terraform output resource_group_name` in
   exercise1.
 
-Change `prefix` in exercise1 and you must change it in all eight.
+Change `prefix` in exercise1 and you must change it in all eight, and in
+exercise0 if you are using it.
 
 The tradeoff of separate state is real and you will meet it in exercise7: the
 web page wants the load balancer's address, but the load balancer needs the VM
 NICs first. With one big configuration Terraform resolves that itself. With
 separate roots you apply exercise7, then exercise8, then re-apply exercise7.
+
+[full-lab](full-lab/) is the other side of that tradeoff: the same network as one
+configuration, where the modules reference each other directly and `prefix` is
+the only value you set twice. Read it after the exercises, not instead of them.
+
+## Where the state lives
+
+By default each directory keeps its own `terraform.tfstate` on disk. That file is
+the only record of what Terraform built, it holds the generated SSH private key
+in plaintext, and it cannot be shared with anyone else.
+
+[exercise0](exercise0/) replaces that with an Azure storage account. Apply it
+once, and it writes `backend.hcl` at the repository root:
+
+```hcl
+resource_group_name  = "azure-terra-lab-tfstate-rg"
+storage_account_name = "azureterralab7f3a1c"
+container_name       = "tfstate"
+use_azuread_auth     = false
+```
+
+Each root then declares only its own state key:
+
+```hcl
+terraform {
+  backend "azurerm" {
+    key = "exercise1.tfstate"
+  }
+}
+```
+
+and is initialised with the shared half on the command line:
+
+```bash
+terraform -chdir=exercise1 init -backend-config=../backend.hcl
+```
+
+Add `-migrate-state` if that exercise already has local state, and Terraform
+uploads what you have. Locking needs nothing extra: the azurerm backend takes a
+lease on the state blob itself.
+
+`backend.hcl` holds names only, no keys, so it is safe to commit.
+
+[remote-backend-demo](remote-backend-demo/) is that whole sequence already wired
+up and working, against two throwaway resource groups. Run it before you migrate
+anything you care about.
 
 ## Tear it down
 
@@ -234,6 +306,7 @@ modules are the reusable part; the exercises decide what to build with them.
 | `modules/networking/natgateway` | Outbound Internet for private subnets |
 | `modules/vms/linux` | Every VM, plus the one SSH key they share |
 | `modules/loadbalancers` | Load balancer, backend pool, probe and rule |
+| `modules/storage/tfstate` | The storage account and container holding remote state |
 
 `modules/vms/linux` is the one module called once rather than per instance, and
 it loops internally. That is deliberate: the key pair in its `key.tf` must be

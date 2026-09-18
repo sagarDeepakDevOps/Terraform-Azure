@@ -42,3 +42,13 @@ variable "tags" {
   description = "Resource tags."
   default     = {}
 }
+
+variable "existing_public_ip" {
+  type = object({
+    id         = string
+    ip_address = string
+    fqdn       = optional(string)
+  })
+  description = "Frontend address to use instead of creating one. Needed when the same configuration also passes the address to its VMs: whoever creates it has to sit outside both modules, or they depend on each other. domain_name_label is ignored when this is set."
+  default     = null
+}

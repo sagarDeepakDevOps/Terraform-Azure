@@ -264,6 +264,17 @@ cmd_destroy() {
   require_tools; require_azure
   # Reverse order: Azure refuses to delete a resource another one still uses.
   local list; list="$(targets | tac)"
+
+  # exercise0 holds the storage the other exercises keep their state in.
+  # Destroying it as part of a sweep would leave them with no state at all, so it
+  # goes only when you name it and nothing else.
+  if [[ "$list" == *exercise0* && "${ARGS[*]}" != "exercise0" && "${ARGS[*]}" != "0" ]]; then
+    list="$(printf '%s\n' "$list" | grep -vx 'exercise0' || true)"
+    note "Skipping exercise0: it holds the remote state backend."
+    note 'Destroy it on its own with: ./run.sh destroy exercise0'
+    [[ -n "$list" ]] || die "Nothing left to destroy."
+  fi
+
   banner "Destroying in this order"
   printf '%s\n' "$list"
   if ! $ASSUME_YES; then

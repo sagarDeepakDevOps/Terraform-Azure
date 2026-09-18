@@ -9,7 +9,11 @@ terraform {
 }
 
 # Frontend address; an optional domain_name_label adds the DNS name backends match on, and must be region-unique.
+# Skipped when the caller passes one in: a root that also feeds this address to
+# its VMs must own the address itself, or the two modules depend on each other.
 resource "azurerm_public_ip" "this" {
+  count = var.existing_public_ip == null ? 1 : 0
+
   name                = "${var.name}-pip"
   resource_group_name = var.resource_group_name
   location            = var.location
@@ -17,6 +21,14 @@ resource "azurerm_public_ip" "this" {
   sku                 = "Standard"
   domain_name_label   = var.domain_name_label
   tags                = var.tags
+}
+
+# Splat rather than [0]: it yields an empty list when count is 0, so neither
+# branch can fail with an index error.
+locals {
+  public_ip_id      = var.existing_public_ip != null ? var.existing_public_ip.id : one(azurerm_public_ip.this[*].id)
+  public_ip_address = var.existing_public_ip != null ? var.existing_public_ip.ip_address : one(azurerm_public_ip.this[*].ip_address)
+  public_ip_fqdn    = var.existing_public_ip != null ? var.existing_public_ip.fqdn : one(azurerm_public_ip.this[*].fqdn)
 }
 
 # Layer-4 only, with no VNet of its own: the pool takes its network from the NICs added to it, so all backends share one VNet.
@@ -29,7 +41,7 @@ resource "azurerm_lb" "this" {
 
   frontend_ip_configuration {
     name                 = "public"
-    public_ip_address_id = azurerm_public_ip.this.id
+    public_ip_address_id = local.public_ip_id
   }
 }
 
