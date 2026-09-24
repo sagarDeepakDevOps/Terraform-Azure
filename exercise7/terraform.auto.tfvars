@@ -1,13 +1,9 @@
 resource_group_name = "azure-terra-lab-rg"
 prefix              = "azure-terra-lab"
 
-# size availability is per subscription and region. The whole B-series is blocked
-# on free subscriptions, so check before changing:
-#   az vm list-skus -l eastus2 --resource-type virtualMachines --all \
-#     --query "[?!restrictions && starts_with(name,'Standard_D2')].name" -o tsv
+# B-series is blocked on free subscriptions; check sizes with az vm list-skus -l eastus2 --size Standard_D -o table
 vms = {
-  # Private backend. Reachable only through the load balancer or the jump host.
-  # Needs the NAT gateway from exercise6 to install Apache at first boot.
+  # Private backend, reached via the load balancer or jump host; needs exercise6's NAT to install Apache.
   web1 = {
     vnet_key          = "workload"
     subnet_name       = "web"

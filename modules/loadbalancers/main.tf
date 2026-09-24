@@ -8,9 +8,7 @@ terraform {
   }
 }
 
-# Frontend address; an optional domain_name_label adds the DNS name backends match on, and must be region-unique.
-# Skipped when the caller passes one in: a root that also feeds this address to
-# its VMs must own the address itself, or the two modules depend on each other.
+# Frontend IP, skipped when the caller supplies one to avoid a module cycle; the DNS label must be region-unique.
 resource "azurerm_public_ip" "this" {
   count = var.existing_public_ip == null ? 1 : 0
 
@@ -23,8 +21,7 @@ resource "azurerm_public_ip" "this" {
   tags                = var.tags
 }
 
-# Splat rather than [0]: it yields an empty list when count is 0, so neither
-# branch can fail with an index error.
+# Splat instead of [0] so neither branch fails with an index error when count is 0.
 locals {
   public_ip_id      = var.existing_public_ip != null ? var.existing_public_ip.id : one(azurerm_public_ip.this[*].id)
   public_ip_address = var.existing_public_ip != null ? var.existing_public_ip.ip_address : one(azurerm_public_ip.this[*].ip_address)

@@ -1,13 +1,8 @@
-# Exercise 0: remote state storage for every other exercise.
-#
-# This is the one configuration that cannot use the backend it creates: the
-# container has to exist before anything can write state into it. So this
-# exercise keeps its state on disk, and everything else keeps its state here.
+# Remote state storage; its own state stays local because a backend cannot store itself.
 module "resource_group" {
   source = "../../modules/resourcegroups"
 
-  # Deliberately not the lab's own group. ./run.sh destroy all empties that one,
-  # and the state must survive it.
+  # Separate from the lab's group so destroying the lab never takes the state with it.
   name     = "${var.prefix}-tfstate-rg"
   location = var.location
   tags     = var.tags

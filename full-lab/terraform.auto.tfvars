@@ -1,7 +1,4 @@
-# IMPORTANT: this prefix must NOT match the one in the numbered exercises.
-# Both configurations name resources <prefix>-something. Share a prefix and the
-# two states each believe they own the same resources, and applying one starts
-# undoing the other. Different prefix, different resource group, no overlap.
+# Must differ from the numbered exercises' prefix, or both states will claim the same resources.
 prefix   = "azure-terra-full"
 location = "eastus2"
 
@@ -11,8 +8,7 @@ vnets = {
   workload = { address_space = ["10.20.0.0/16"] }
 }
 
-# exercise3: outer key must match a VNet above, and each range must sit inside
-# that VNet's address_space.
+# exercise3: outer key must match a VNet above, and each range must sit inside its address_space.
 vnet_subnets = {
   lb = {
     frontend = { address_prefixes = ["10.10.1.0/24"] }
@@ -22,12 +18,7 @@ vnet_subnets = {
   }
 }
 
-# exercise4: one NSG per subnet. Rules belong to that subnet alone.
-#   source_address_prefix takes a CIDR ("203.0.113.4/32") or an Azure service tag
-#   ("Internet", "VirtualNetwork", "AzureLoadBalancer"). VirtualNetwork also
-#   covers peered VNets, which is how the jump host reaches the web subnet.
-#   protocol defaults to "Tcp"; ICMP has no ports so use destination_port_range "*".
-#   Lower priority numbers win, so keep the catch-all deny at 4096.
+# exercise4: one NSG per subnet; sources take a CIDR or service tag, and the lowest priority number wins.
 nsgs = {
   lb-frontend = {
     vnet_key    = "lb"
@@ -53,9 +44,7 @@ nsgs = {
     vnet_key    = "workload"
     subnet_name = "web"
     rules = {
-      # A Standard load balancer does not rewrite the client address, so traffic
-      # it forwards still arrives from the real Internet client. Without this the
-      # site breaks even though no VM has a public IP.
+      # A Standard load balancer keeps the client's source IP, so HTTP must be allowed from Internet.
       allow_http_from_lb_clients = {
         priority               = 100
         destination_port_range = "80"
@@ -102,8 +91,7 @@ vnet_peerings = {
   }
 }
 
-# exercise6: only the web subnet needs this. The frontend subnet's jump host has
-# its own public IP, which already gives it an outbound path.
+# exercise6: only the web subnet needs NAT; the jump host goes out through its own public IP.
 nat_gateways = {
   workload-web = {
     vnet_key    = "workload"
@@ -111,13 +99,9 @@ nat_gateways = {
   }
 }
 
-# exercise7: size availability is per subscription and region. The whole B-series
-# is blocked on free subscriptions, so check before changing:
-#   az vm list-skus -l eastus2 --resource-type virtualMachines --all \
-#     --query "[?!restrictions && starts_with(name,'Standard_D2')].name" -o tsv
+# exercise7: B-series is blocked on free subscriptions; check sizes with az vm list-skus -l eastus2 --size Standard_D -o table
 vms = {
-  # Private backend. Reachable only through the load balancer or the jump host.
-  # Needs the NAT gateway to install Apache at first boot.
+  # Private backend, reached via the load balancer or jump host; needs the NAT gateway to install Apache.
   web1 = {
     vnet_key          = "workload"
     subnet_name       = "web"
@@ -137,12 +121,10 @@ vms = {
 
 admin_username = "azureuser"
 
-# exercise8. The backend pool is worked out from the VMs above, so there is no
-# list of VM names to keep in step here.
+# exercise8. The backend pool comes from the web-role VMs above, so there is no name list to maintain.
 http_port = 80
 
-# Azure gives a load balancer no DNS name automatically, because the frontend
-# already has a static IP you own. Set a region-unique label to get one.
+# Azure gives a load balancer no DNS name by default; set a region-unique label to add one.
 # lb_domain_name_label = "azure-terra-full-7391"
 
 tags = {

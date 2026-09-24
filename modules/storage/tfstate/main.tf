@@ -1,6 +1,4 @@
-# Storage account names are global across all of Azure and allow only 3-24
-# lowercase letters and digits, so the lab prefix is stripped of its hyphens and
-# given a random tail rather than used as-is.
+# Names are global and 3-24 lowercase letters or digits, so strip hyphens and add a random suffix.
 resource "random_string" "suffix" {
   length  = 6
   lower   = true
@@ -22,8 +20,7 @@ locals {
 # Whoever runs Terraform, used only to grant that identity access to the blobs.
 data "azurerm_client_config" "current" {}
 
-# Holds every other configuration's state, so it must outlive them: never put it
-# in a resource group you tear down between sessions.
+# Holds all other state, so never put it in a resource group you tear down.
 resource "azurerm_storage_account" "this" {
   name                = local.account_name
   resource_group_name = var.resource_group_name
@@ -39,13 +36,11 @@ resource "azurerm_storage_account" "this" {
   allow_nested_items_to_be_public = false
   public_network_access_enabled   = true
 
-  # Off means the backend must authenticate as you, rather than with an account
-  # key that anyone able to read the account can fetch.
+  # When off, the backend authenticates as you instead of with a fetchable account key.
   shared_access_key_enabled = var.shared_access_key_enabled
 
   blob_properties {
-    # Every apply overwrites one blob. Versioning is what lets you go back to the
-    # state as it was before an apply that went wrong.
+    # Each apply overwrites one blob; versioning lets you restore state from before a bad apply.
     versioning_enabled = true
 
     delete_retention_policy {
@@ -57,8 +52,7 @@ resource "azurerm_storage_account" "this" {
     }
   }
 
-  # Absent by default: a firewall that does not list your address turns every
-  # plan into a 403, including the container creation below.
+  # Omitted by default: a firewall that misses your IP turns every plan into a 403.
   dynamic "network_rules" {
     for_each = length(var.allowed_ip_ranges) > 0 ? [1] : []
     content {
@@ -71,16 +65,14 @@ resource "azurerm_storage_account" "this" {
   tags = var.tags
 }
 
-# One container holding one blob per configuration. The azurerm backend takes its
-# lock as a lease on that blob, so there is no lock table to create.
+# One container, one blob per configuration; the backend locks with a blob lease, so no lock table.
 resource "azurerm_storage_container" "this" {
   name                  = var.container_name
   storage_account_id    = azurerm_storage_account.this.id
   container_access_type = "private"
 }
 
-# Reading and writing a blob is a data-plane operation, and subscription roles
-# such as Owner do not grant it. Without this, use_azuread_auth gets a 403.
+# Blob access needs a data-plane role that Owner lacks; without it use_azuread_auth gets a 403.
 resource "azurerm_role_assignment" "current_user" {
   count = var.grant_current_user_blob_access ? 1 : 0
 

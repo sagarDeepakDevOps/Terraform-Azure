@@ -1,5 +1,4 @@
-# No backend block here, and there never will be one. This configuration creates
-# the storage the other backends point at, so its own state stays local.
+# No backend block: this creates the backend storage, so its own state stays local.
 terraform {
   required_version = ">= 1.9.0, < 2.0.0"
 

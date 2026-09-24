@@ -1,5 +1,4 @@
 locals {
-  # Known at plan time because it reads a variable, not a resource. A map key
-  # that is only known after apply would make the backend pool unplannable.
+  # Built from a variable, not a resource, so the backend pool keys are known at plan time.
   web_vm_names = [for name, vm in var.vms : name if vm.role == "web"]
 }

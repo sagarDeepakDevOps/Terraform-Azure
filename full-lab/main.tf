@@ -1,9 +1,4 @@
-# The whole lab in one configuration.
-#
-# Exercises 1 to 8 build this same network as eight separate roots, each with its
-# own state, each finding the one before it with a data source. Here the modules
-# are wired to each other directly, so one apply builds everything and Terraform
-# works out the order itself.
+# The whole lab as one root: modules are wired directly, so one apply builds everything in order.
 
 module "resource_group" {
   source = "../modules/resourcegroups"
@@ -25,8 +20,7 @@ module "vnets" {
   tags                = var.tags
 }
 
-# exercise3. The VNet name comes from the module output rather than being rebuilt
-# from the prefix, which is what makes the dependency real instead of implied.
+# exercise3. Uses the VNet module's output name so Terraform sees the dependency.
 module "subnets" {
   source   = "../modules/networking/subnets"
   for_each = var.vnet_subnets
@@ -78,16 +72,7 @@ module "nat_gateways" {
   tags                = var.tags
 }
 
-# The load balancer's frontend address, created here rather than inside the load
-# balancer module, and this is the whole reason a single root is worth building.
-#
-# The VMs want the address because it is baked into the page cloud-init writes.
-# The load balancer wants the VM NICs for its backend pool. Module to module that
-# is a cycle and Terraform refuses it. Hoisting the one shared resource up into
-# the root breaks it: the address depends on neither, and both depend on it.
-#
-# Separate roots dodge the same problem by applying exercise7, then exercise8,
-# then exercise7 again. Here it is one apply.
+# Owned by the root so the VMs and the load balancer can both use it without a module cycle.
 resource "azurerm_public_ip" "lb" {
   name                = "${var.prefix}-lb-pip"
   resource_group_name = module.resource_group.name
@@ -120,15 +105,11 @@ module "vms" {
   lb_fqdn             = azurerm_public_ip.lb.fqdn
   tags                = var.tags
 
-  # Nothing here reads the NSG or the NAT gateway, so Terraform is free to build
-  # a NIC in a subnet while those are still attaching to it. Azure rejects
-  # concurrent writes to one subnet, and the web VM needs the NAT gateway in
-  # place at first boot or cloud-init cannot reach the Ubuntu archive.
+  # Azure rejects concurrent subnet writes, and cloud-init needs the NAT gateway at first boot.
   depends_on = [module.nsgs, module.nat_gateways]
 }
 
-# exercise8. The backend pool is derived from the VMs whose role is web, so there
-# is no second list to keep in step, and the jump host cannot end up in it.
+# exercise8. The backend pool comes from web-role VMs, so the jump host can never join it.
 module "load_balancer" {
   source = "../modules/loadbalancers"
 

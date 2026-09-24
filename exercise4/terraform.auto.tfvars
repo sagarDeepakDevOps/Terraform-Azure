@@ -1,12 +1,7 @@
 resource_group_name = "azure-terra-lab-rg"
 prefix              = "azure-terra-lab"
 
-# One NSG per subnet. Rules belong to that subnet alone.
-#   source_address_prefix takes a CIDR ("203.0.113.4/32") or an Azure service tag
-#   ("Internet", "VirtualNetwork", "AzureLoadBalancer"). VirtualNetwork also
-#   covers peered VNets, which is how the jump host reaches the web subnet.
-#   protocol defaults to "Tcp"; ICMP has no ports so use destination_port_range "*".
-#   Lower priority numbers win, so keep the catch-all deny at 4096.
+# One NSG per subnet; sources take a CIDR or service tag, and the lowest priority number wins.
 nsgs = {
   lb-frontend = {
     vnet_key    = "lb"
@@ -32,9 +27,7 @@ nsgs = {
     vnet_key    = "workload"
     subnet_name = "web"
     rules = {
-      # A Standard load balancer does not rewrite the client address, so traffic
-      # it forwards still arrives from the real Internet client. Without this the
-      # site breaks even though no VM has a public IP.
+      # A Standard load balancer keeps the client's source IP, so HTTP must be allowed from Internet.
       allow_http_from_lb_clients = {
         priority               = 100
         destination_port_range = "80"
