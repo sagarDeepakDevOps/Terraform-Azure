@@ -63,7 +63,7 @@ variable "enable_delete_lock" {
 
 variable "write_backend_config_file" {
   type        = bool
-  description = "Write backend.hcl at the repository root so every other root can run terraform init -backend-config=../backend.hcl. It holds names only, no keys."
+  description = "Write backend.hcl into full-lab so it can run terraform init -backend-config=backend.hcl. It holds names only, no keys."
   default     = true
 }
 

@@ -4,7 +4,7 @@
 # container has to exist before anything can write state into it. So this
 # exercise keeps its state on disk, and everything else keeps its state here.
 module "resource_group" {
-  source = "../modules/resourcegroups"
+  source = "../../modules/resourcegroups"
 
   # Deliberately not the lab's own group. ./run.sh destroy all empties that one,
   # and the state must survive it.
@@ -14,7 +14,7 @@ module "resource_group" {
 }
 
 module "tfstate" {
-  source = "../modules/storage/tfstate"
+  source = "../../modules/storage/tfstate"
 
   resource_group_name = module.resource_group.name
   location            = module.resource_group.location
@@ -32,10 +32,7 @@ module "tfstate" {
   tags = var.tags
 }
 
-# The account name is generated, so hardcoding it in eight backend blocks would
-# mean editing eight files. This writes the shared half of the configuration to
-# the repository root instead, and each root passes it to:
-#   terraform init -backend-config=../backend.hcl
+# Writes full-lab/backend.hcl for: terraform init -backend-config=backend.hcl
 resource "local_file" "backend_config" {
   count = var.write_backend_config_file ? 1 : 0
 

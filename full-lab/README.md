@@ -115,11 +115,11 @@ different owners, not around each service.
 ## Remote state
 
 [`backend.tf`](backend.tf) holds a commented-out `azurerm` backend. Apply
-[exercise0](../exercise0/) first, which creates the storage and writes
-`backend.hcl` at the repository root, then uncomment the block and run:
+[backend-prereq](backend-prereq/) first, which creates the storage and writes
+`backend.hcl` into this folder, then uncomment the block and run:
 
 ```bash
-terraform init -backend-config=../backend.hcl
+terraform init -backend-config=backend.hcl
 ```
 
 If this configuration already has local state, add `-migrate-state` and

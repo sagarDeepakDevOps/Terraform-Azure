@@ -19,7 +19,7 @@ The resource group is **not** the lab's group. `./run.sh destroy all` empties
 ## Run it
 
 ```bash
-cd exercise0
+cd full-lab/backend-prereq
 terraform init
 terraform apply
 ```
@@ -40,7 +40,7 @@ so add `--auth-mode login` and the CLI signs in as you instead.
 
 ## Carry forward
 
-The apply writes [`../backend.hcl`](../backend.hcl) at the repository root:
+The apply writes [`../backend.hcl`](../backend.hcl) into `full-lab/`:
 
 ```hcl
 resource_group_name  = "azure-terra-lab-tfstate-rg"
@@ -49,13 +49,13 @@ container_name       = "tfstate"
 use_azuread_auth     = false
 ```
 
-It holds names only, no keys, so it is safe to commit. Every other root then
-needs just its own state key:
+It holds names only, no keys, so it is safe to commit. `full-lab` then needs
+just its own state key:
 
 ```hcl
 terraform {
   backend "azurerm" {
-    key = "exercise1.tfstate"
+    key = "full-lab.tfstate"
   }
 }
 ```
@@ -63,7 +63,7 @@ terraform {
 and is initialised with the shared half on the command line:
 
 ```bash
-terraform -chdir=exercise1 init -backend-config=../backend.hcl
+terraform -chdir=full-lab init -backend-config=backend.hcl
 ```
 
 If you would rather spell it out in full, `terraform output backend_block_example`
@@ -71,12 +71,12 @@ prints a complete block to paste.
 
 ## Moving state that already exists
 
-If you have already applied exercises with local state, do not delete the local
-file. Add the backend block, then let Terraform copy it up:
+If you have already applied full-lab with local state, do not delete the local
+file. Uncomment the backend block, then let Terraform copy it up:
 
 ```bash
-cd exercise1
-terraform init -backend-config=../backend.hcl -migrate-state
+cd full-lab
+terraform init -backend-config=backend.hcl -migrate-state
 ```
 
 It reads the local state, uploads it, and asks you to confirm. Check the

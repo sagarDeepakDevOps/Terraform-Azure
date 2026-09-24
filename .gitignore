@@ -16,4 +16,5 @@ override.tf.json
 *.key
 .env
 .env.*
-!**/.terraform.lock.hcl
+**/.terraform.lock.hcl
+*hcl*
