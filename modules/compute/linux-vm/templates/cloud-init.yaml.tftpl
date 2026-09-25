@@ -1,0 +1,17 @@
+#cloud-config
+# apt goes out through the hub firewall, so its egress rule must allow *.ubuntu.com before first boot.
+package_update: true
+packages:
+  - apache2
+runcmd:
+  - |
+    IP=$(hostname -I | awk '{print $1}')
+    cat > /var/www/html/index.html <<HTML
+    <!doctype html>
+    <html lang="en"><head><meta charset="utf-8"><title>${vm_name}</title></head>
+    <body style="font-family:sans-serif;max-width:40rem;margin:2rem auto">
+    <h1>Hello from ${vm_name}</h1>
+    <p>spoke=${spoke} private_ip=$IP</p>
+    </body></html>
+    HTML
+  - [ systemctl, enable, --now, apache2 ]
