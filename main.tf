@@ -52,11 +52,11 @@ module "vms" {
   computer_name       = each.key
   resource_group_name = module.resource_group.name
   location            = module.resource_group.location
-  subnet_id           = module.spokes[each.value.spoke_key].subnet_ids[each.value.subnet_key]
+  subnet_id           = local.subnet_ids[each.value.vnet_key][each.value.subnet_key]
   private_ip_address  = each.value.private_ip_address
   size                = each.value.size
   install_apache      = each.value.install_apache
-  spoke_name          = each.value.spoke_key
+  vnet_name           = each.value.vnet_key
   admin_username      = var.admin_username
   ssh_public_key      = module.ssh_key.public_key_openssh
   tags                = var.tags

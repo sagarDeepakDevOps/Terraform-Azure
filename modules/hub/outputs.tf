@@ -7,6 +7,19 @@ output "vnet" {
   }
 }
 
+output "address_space" {
+  description = "Hub VNet CIDR ranges."
+  value       = module.vnet.address_space
+}
+
+# Released only once the NSGs and route are attached, so hub VMs never boot without a path out.
+output "subnet_ids" {
+  description = "Hub subnet IDs keyed by subnet name, available after the NSGs and route table are attached."
+  value       = module.vnet.subnet_ids
+
+  depends_on = [module.nsgs, module.route_table]
+}
+
 output "firewall_private_ip" {
   description = "Next hop for every spoke's default route."
   value       = module.firewall.private_ip_address

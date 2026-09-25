@@ -23,12 +23,22 @@ variable "hub" {
   type = object({
     address_space = list(string)
     subnets = map(object({
-      address_prefixes = list(string)
+      address_prefixes   = list(string)
+      route_via_firewall = optional(bool, false)
+      nsg_rules = optional(map(object({
+        priority                     = number
+        direction                    = optional(string, "Inbound")
+        access                       = optional(string, "Allow")
+        protocol                     = optional(string, "Tcp")
+        source_address_prefixes      = list(string)
+        destination_port_ranges      = optional(list(string), ["*"])
+        destination_address_prefixes = optional(list(string), ["*"])
+      })))
     }))
     firewall_sku_tier = optional(string, "Basic")
     bastion_sku       = optional(string, "Standard")
   })
-  description = "The hub VNet. Subnet names are fixed by Azure: AzureFirewallSubnet, AzureFirewallManagementSubnet (Basic tier) and AzureBastionSubnet."
+  description = "The hub VNet. AzureFirewallSubnet, AzureFirewallManagementSubnet (Basic tier) and AzureBastionSubnet are fixed by Azure. Any other subnet with nsg_rules can hold VMs."
 }
 
 variable "spokes" {
@@ -53,21 +63,26 @@ variable "spokes" {
     condition     = alltrue(flatten([for spoke in var.spokes : [for cidr in spoke.address_space : can(cidrnetmask(cidr))]]))
     error_message = "Every spoke address_space entry must be a valid IPv4 CIDR."
   }
+
+  validation {
+    condition     = !contains(keys(var.spokes), "hub")
+    error_message = "No spoke may be called hub; that key means the hub VNet in vms and firewall_application_rules."
+  }
 }
 
 variable "vms" {
   type = map(object({
-    spoke_key          = string
+    vnet_key           = string
     subnet_key         = string
     private_ip_address = optional(string)
     size               = optional(string, "Standard_D2ls_v7")
-    install_apache     = optional(bool, true)
+    install_apache     = optional(bool, false)
   }))
-  description = "VMs keyed by hostname. None has a public IP; reach them through the firewall's DNAT or through Bastion."
+  description = "VMs keyed by hostname. vnet_key is hub or a spoke key. install_apache true serves a test page; otherwise it is a plain host. None has a public IP."
 
   validation {
-    condition     = alltrue([for vm in var.vms : try(contains(keys(var.spokes[vm.spoke_key].subnets), vm.subnet_key), false)])
-    error_message = "Every VM's spoke_key and subnet_key must name a subnet declared in spokes."
+    condition     = alltrue([for vm in var.vms : vm.vnet_key == "hub" ? try(var.hub.subnets[vm.subnet_key].nsg_rules != null, false) : try(contains(keys(var.spokes[vm.vnet_key].subnets), vm.subnet_key), false)])
+    error_message = "Every VM's vnet_key and subnet_key must name a spoke subnet, or a hub subnet that has nsg_rules."
   }
 }
 
@@ -98,7 +113,7 @@ variable "firewall_network_rules" {
     protocols          = list(string)
     destination_ports  = list(string)
   }))
-  description = "Spoke-to-spoke allow rules, written with spoke keys instead of CIDRs. Traffic between spokes with no rule is dropped at the hub."
+  description = "Spoke-to-spoke allow rules, written with spoke keys instead of CIDRs. Traffic between spokes with no rule is dropped at the hub. Hub-to-spoke traffic goes over the peering and never reaches the firewall."
   default     = {}
 
   validation {
@@ -114,7 +129,7 @@ variable "firewall_network_rules" {
 
 variable "firewall_application_rules" {
   type = map(object({
-    source_spokes     = list(string)
+    source_vnets      = list(string)
     destination_fqdns = list(string)
     protocols = optional(list(object({
       type = string
@@ -124,12 +139,12 @@ variable "firewall_application_rules" {
       { type = "Https", port = 443 },
     ])
   }))
-  description = "Outbound FQDN allow rules, written with spoke keys. Anything a spoke tries to reach that is not listed here is denied."
+  description = "Outbound FQDN allow rules, written with hub or spoke keys. Anything a VM tries to reach on the Internet that is not listed here is denied."
   default     = {}
 
   validation {
-    condition     = alltrue([for rule in var.firewall_application_rules : alltrue([for spoke in rule.source_spokes : contains(keys(var.spokes), spoke)])])
-    error_message = "Every source_spokes entry must be a key of spokes."
+    condition     = alltrue([for rule in var.firewall_application_rules : alltrue([for vnet in rule.source_vnets : vnet == "hub" || contains(keys(var.spokes), vnet)])])
+    error_message = "Every source_vnets entry must be hub or a key of spokes."
   }
 }
 

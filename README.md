@@ -19,13 +19,15 @@ to Internet clients. No VM has a public IP.
 |   AzureFirewallSubnet            10.0.0.0/26    Azure Firewall Basic 10.0.0.4 |
 |   AzureFirewallManagementSubnet  10.0.0.64/26   (the Basic tier needs it)     |
 |   AzureBastionSubnet             10.0.1.0/26    Azure Bastion Standard        |
+|   shared                         10.0.2.0/24    hub1 10.0.2.10  (test VM)     |
+|                                  NSG, route 0.0.0.0/0 -> fw (Internet only)   |
 +--------------+-----------------------------------------------+---------------+
        peering |                                               | peering
 +-- web-vnet 10.1.0.0/16 --------+          +-- api-vnet 10.2.0.0/16 ----------+
 |   frontend 10.1.1.0/24         |          |   backend 10.2.1.0/24            |
 |     NSG                        |          |     NSG                          |
 |     route 0.0.0.0/0 -> fw      |          |     route 0.0.0.0/0 -> fw        |
-|     web1 10.1.1.10  (Apache)   |          |     api1 10.2.1.10  (Apache)     |
+|     web1 10.1.1.10  (Apache)   |          |     api1 10.2.1.10  (test VM)    |
 +--------------------------------+          +----------------------------------+
 
 Everything is in one resource group, <prefix>-rg.
@@ -34,9 +36,13 @@ Everything is in one resource group, <prefix>-rg.
 The two spokes are not peered with each other. Peering is not transitive, so
 the only way from `web` to `api` is through the firewall, and the firewall
 decides whether the traffic is allowed. That is what makes it hub and spoke
-rather than a mesh.
+rather than a mesh. `hub1` is there to show the other side: the hub *is*
+peered with each spoke, so hub1 reaches web1 and api1 directly.
 
-## The four traffic paths
+Only web1 runs a web server (Apache). hub1 and api1 are plain Ubuntu VMs you
+test connectivity from.
+
+## The five traffic paths
 
 Everything the lab does is one of these. Each path is controlled in more than
 one place, and a missing piece in any of them drops the traffic.
@@ -59,19 +65,21 @@ browser -> firewall public IP :80 -> DNAT -> web1 10.1.1.10 :80
 ### 2. Spoke to spoke
 
 ```
-web1 -> route 0.0.0.0/0 -> firewall -> network rule web-to-api-http -> api1
+api1 -> route 0.0.0.0/0 -> firewall -> network rule spokes-icmp -> web1
 ```
 
 - **Route table:** a spoke's VNet knows only its own range and, through the
-  peering, the hub's. `10.2.0.0/16` matches neither, so it falls to
+  peering, the hub's. `10.1.0.0/16` matches neither, so it falls to
   `0.0.0.0/0`, whose next hop is the firewall. The reply takes the same route
   back, so the firewall sees both directions of the connection.
 - **Firewall:** `firewall_network_rules` in tfvars. Rules name spokes rather
-  than CIDRs, and [locals.tf](locals.tf) looks the ranges up. Rules are
-  stateful and one-way: `web` may open connections to `api` on port 80, but
-  `api` cannot open one to `web`.
-- **NSG on `backend`:** allows port 80 from `10.1.0.0/16`. Traffic between
-  private ranges is not SNATed, so the source address really is web1's.
+  than CIDRs, and [locals.tf](locals.tf) looks the ranges up. `spokes-icmp`
+  allows ping both ways. Nothing else between spokes is allowed, so
+  `curl http://10.1.1.10` from api1 gets the firewall's
+  `Action: Deny. Reason: No rule matched.`
+- **NSG on the destination:** `frontend` allows ICMP from `10.2.0.0/16` and
+  `backend` from `10.1.0.0/16`. Traffic between private ranges is not SNATed,
+  so the source address really is the other VM's.
 - **Peering:** `allow_forwarded_traffic` must be true on the spoke side,
   because packets from another spoke arrive with a source address that is not
   the hub's own.
@@ -79,32 +87,54 @@ web1 -> route 0.0.0.0/0 -> firewall -> network rule web-to-api-http -> api1
 A ping from api1 to web1 comes back with `ttl=63` instead of 64: the one hop is
 the firewall.
 
-### 3. Spoke to the Internet
+### 3. Hub to spoke
+
+```
+hub1 10.0.2.10 -> peering -> web1 10.1.1.10      (and api1 the same way)
+```
+
+- **Route table:** the hub is peered with both spokes, so its VNet has system
+  routes for `10.1.0.0/16` and `10.2.0.0/16`. They are more specific than the
+  `shared` subnet's `0.0.0.0/0 -> firewall` route, so they win. The reply
+  matches the spoke's route for the hub range `10.0.0.0/22` and comes straight
+  back too.
+- **Firewall:** not involved at all, so no firewall rule is needed. The ping
+  shows it: hub1 to web1 is `ttl=64`, with no hop in between.
+- **NSGs:** both sides still filter. Both spokes allow ICMP from
+  `10.0.2.0/24`, and `frontend` also allows HTTP from it, so hub1 can load
+  web1's page. The `shared` subnet allows ICMP from both spoke ranges.
+
+This is peering doing its job, and it is also a gap worth knowing about. A
+hub VM talks to every spoke uninspected. To send that traffic through the
+firewall as well, give `shared` routes for each spoke range, and each spoke a
+route for `10.0.2.0/24`, all with the firewall as next hop.
+
+### 4. VMs to the Internet
 
 ```
 api1 -> route 0.0.0.0/0 -> firewall -> application rule ubuntu-packages -> *.ubuntu.com
 ```
 
-- **Subnets are private.** `default_outbound_access_enabled = false` in the
-  spoke module, so without the route there is no Internet access at all. There
-  is no NAT gateway anywhere.
+- **Subnets are private.** `default_outbound_access_enabled = false` on every
+  spoke subnet and on `shared`, so without the route there is no Internet
+  access at all. There is no NAT gateway anywhere.
 - **Firewall:** `firewall_application_rules` in tfvars allows by FQDN, and
   everything else is denied. `curl http://www.microsoft.com` from a VM gets the
   firewall's own reply: `Action: Deny. Reason: No rule matched.`
-- **Order matters on first boot.** cloud-init installs Apache from
+- **Order matters on first boot.** cloud-init installs Apache on web1 from
   `*.ubuntu.com`, so the firewall and its rules must exist before any VM boots.
-  The code enforces this. The firewall `depends_on` its rules, the spoke route
-  needs the firewall's IP, and the spoke's `subnet_ids` output `depends_on` the
-  NSG, the route table and the peering. A VM cannot get its subnet ID any
+  The code enforces this. The firewall `depends_on` its rules, every route
+  needs the firewall's IP, and the hub's and spokes' `subnet_ids` outputs
+  `depends_on` their NSGs and route tables. A VM cannot get its subnet ID any
   earlier.
 
-### 4. You to a VM
+### 5. You to a VM
 
 ```
 az network bastion ssh -> Bastion (hub) -> peering -> VM :22
 ```
 
-- **NSGs:** both spokes allow port 22 only from `10.0.1.0/26`, the
+- **NSGs:** every VM subnet allows port 22 only from `10.0.1.0/26`, the
   AzureBastionSubnet range. There is no jump host and nothing to SSH to
   directly.
 - **Bastion SKU:** `Standard` supports `az network bastion ssh` from your
@@ -127,7 +157,7 @@ module** for a part that repeats.
     ├── resource-group/             one resource group; used by the root and by backend-prereq
     ├── storage/
     │   └── tfstate/                storage account + container for remote state
-    ├── hub/                        hub VNet + firewall + Bastion
+    ├── hub/                        hub VNet + firewall + Bastion + NSG and route for VM subnets
     ├── spoke/                      spoke VNet + NSG per subnet + route to firewall + peering
     ├── networking/                 sub-modules used by hub and spoke
     │   ├── vnet/
@@ -152,6 +182,8 @@ module** for a part that repeats.
 | `hub`, `spoke` | `networking/vnet` | once each |
 | `vnet` | `vnet/subnet` | `for_each` over the subnets |
 | `spoke` | `networking/nsg` | `for_each` over the subnets |
+| `hub` | `networking/nsg` | `for_each` over subnets with `nsg_rules` |
+| `hub` | `networking/route-table` | once, if any subnet sets `route_via_firewall` |
 | `firewall` | `firewall/rule-collection-group` | once, holding every rule |
 | `backend-prereq` | `resource-group`, `storage/tfstate` | once each |
 
@@ -168,7 +200,7 @@ export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 ```
 
 This lab uses **3 public IPs** (firewall data, firewall management, Bastion)
-and **4 vCPUs** (two `Standard_D2ls_v7`). Check the region has room:
+and **6 vCPUs** (three `Standard_D2ls_v7`). Check the region has room:
 
 ```bash
 az network list-usages --location eastus2 \
@@ -208,15 +240,15 @@ If this directory already has a local `terraform.tfstate`, add
 to confirm. Check the blob is in the container, then delete the local
 `terraform.tfstate` and its backup.
 
-It creates 44 resources in about 12 minutes. Most of that is the firewall
+It creates 60 resources in about 12 minutes. Most of that is the firewall
 (about 8 minutes) and Bastion (about 10), which are built in parallel.
 
-`terraform apply` returns before cloud-init has finished installing Apache.
+`terraform apply` returns before cloud-init has finished installing Apache on web1.
 Allow another two minutes before the page answers.
 
 ## Test it
 
-Each step checks one of the four paths. Run them from this directory.
+Each step checks one of the five paths. Run them from this directory.
 `az vm run-command` runs a command inside a VM without SSH, which is handy
 here because nothing has a public IP.
 
@@ -227,11 +259,12 @@ run() { az vm run-command invoke -g "$RG" -n "azure-terra-hs-$1" --command-id Ru
           --scripts "$2" --query "value[0].message" -o tsv; }
 ```
 
-**0. cloud-init finished on both VMs.** Expect `status: done` and `active`:
+**0. cloud-init finished.** Expect `status: done` on all three, and `active`
+for Apache on web1:
 
 ```bash
-run web1 "cloud-init status; systemctl is-active apache2"
-run api1 "cloud-init status; systemctl is-active apache2"
+for vm in hub1 web1 api1; do run $vm "cloud-init status"; done
+run web1 "systemctl is-active apache2"
 ```
 
 **1. Internet to web1, through DNAT.** Expect `Hello from web1`:
@@ -244,23 +277,38 @@ run web1 "grep -v '^168.63.129.16' /var/log/apache2/access.log | awk '{print \$1
 The second command shows who web1 thinks the client was: `10.0.0.5` and
 `10.0.0.6`, the firewall instances.
 
-**2. Spoke to spoke, allowed one way only:**
+**2. Spoke to spoke, through the firewall.** Ping is allowed; HTTP is not:
 
 ```bash
-run web1 "curl -s -m 5 http://10.2.1.10 | grep -o 'Hello from api1'"   # allowed by web-to-api-http
+run api1 "ping -c 2 10.1.1.10"                                         # replies, ttl=63, via the firewall
+run web1 "ping -c 2 10.2.1.10"                                         # replies, ttl=63
 run api1 "curl -s -m 5 http://10.1.1.10"                               # Action: Deny. Reason: No rule matched.
-run api1 "ping -c 2 10.1.1.10"                                         # replies, ttl=63
 ```
 
-**3. Egress, filtered by FQDN:**
+**3. Hub to spoke, straight over the peering.** No firewall rule is involved,
+and the TTL shows there is no hop in between:
+
+```bash
+run hub1 "ping -c 2 10.1.1.10"                                         # replies, ttl=64
+run hub1 "ping -c 2 10.2.1.10"                                         # replies, ttl=64
+run hub1 "curl -s -m 5 http://10.1.1.10 | grep -o 'Hello from web1'"   # no firewall rule needed
+run web1 "ping -c 2 10.0.2.10"                                         # and back the other way, ttl=64
+run api1 "ping -c 2 10.0.2.10"                                         # ttl=64
+```
+
+Compare with step 2: `api1 -> web1` is `ttl=63`, because that path goes
+through the firewall.
+
+**4. Egress, filtered by FQDN.** The same for every VM, hub1 included:
 
 ```bash
 run api1 "curl -s -o /dev/null -w '%{http_code}\n' http://azure.archive.ubuntu.com/ubuntu/"   # 200
 run api1 "curl -s -m 5 http://www.microsoft.com"                                              # Action: Deny
 run api1 "curl -s -m 5 -o /dev/null -w '%{http_code}\n' https://www.bing.com"                 # 000, TLS refused
+run hub1 "curl -s -m 5 http://www.microsoft.com"                                              # Action: Deny
 ```
 
-**4. SSH through Bastion.** Each VM has a ready-made command. The first run
+**5. SSH through Bastion.** Each VM, hub1 included, has a ready-made command. The first run
 asks to install the `bastion` and `ssh` Azure CLI extensions:
 
 ```bash
@@ -275,15 +323,17 @@ these needs an HCL change.
 **Add a spoke.** Add an entry to `spokes` with a range that overlaps nothing.
 It gets its own VNet, NSGs, route to the firewall and peering with the hub. It
 cannot reach anything until you give it firewall rules. Add it to
-`firewall_application_rules.ubuntu-packages.source_spokes` so its VMs can
+`firewall_application_rules.ubuntu-packages.source_vnets` so its VMs can
 install packages, and add a `firewall_network_rules` entry for any spoke it
 should talk to.
 
-**Add a VM.** Add a key to `vms` naming its `spoke_key` and `subnet_key`. Set
-`install_apache = false` for a plain host.
+**Add a VM.** Add a key to `vms` naming its `vnet_key` (`hub` or a spoke key)
+and `subnet_key`. In the hub, the subnet must have `nsg_rules`; the subnets
+Azure reserves cannot hold VMs. It is a plain host unless you set
+`install_apache = true`, which serves a page naming the VM.
 
-**Publish another VM.** Give it a `private_ip_address`, then add an entry to
-`firewall_dnat_rules`. Set `public_port` if port 80 is already taken on the
+**Publish another VM.** Give it a `private_ip_address` and something to serve
+(`install_apache = true`), then add an entry to `firewall_dnat_rules`. Set `public_port` if port 80 is already taken on the
 firewall. Also allow the port from `10.0.0.0/26` in that subnet's NSG.
 
 **Allow a new flow between spokes.** It needs two changes, one at each layer:
@@ -299,10 +349,10 @@ Approximate eastus2 pay-as-you-go prices while it is running:
 | --- | --- |
 | Azure Firewall Basic | ~$0.40 plus $0.065 per GB processed |
 | Azure Bastion Standard | ~$0.29 (Basic is ~$0.19) |
-| 2 x Standard_D2ls_v7 | ~$0.17 |
+| 3 x Standard_D2ls_v7 | ~$0.25 |
 | 3 Standard public IPs | ~$0.015 |
 
-Roughly **$0.90 an hour**, or about $21 a day if you forget it. Destroy it when
+Roughly **$0.95 an hour**, or about $23 a day if you forget it. Destroy it when
 you finish.
 
 ## Tear it down

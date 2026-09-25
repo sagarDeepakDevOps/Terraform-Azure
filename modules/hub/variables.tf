@@ -20,9 +20,19 @@ variable "address_space" {
 
 variable "subnets" {
   type = map(object({
-    address_prefixes = list(string)
+    address_prefixes   = list(string)
+    route_via_firewall = optional(bool, false)
+    nsg_rules = optional(map(object({
+      priority                     = number
+      direction                    = optional(string, "Inbound")
+      access                       = optional(string, "Allow")
+      protocol                     = optional(string, "Tcp")
+      source_address_prefixes      = list(string)
+      destination_port_ranges      = optional(list(string), ["*"])
+      destination_address_prefixes = optional(list(string), ["*"])
+    })))
   }))
-  description = "Hub subnets keyed by name. AzureFirewallSubnet and AzureBastionSubnet are required, plus AzureFirewallManagementSubnet on the Basic tier."
+  description = "Hub subnets keyed by name. AzureFirewallSubnet and AzureBastionSubnet are required, plus AzureFirewallManagementSubnet on the Basic tier. Give any other subnet nsg_rules to hold VMs."
 
   validation {
     condition     = contains(keys(var.subnets), "AzureFirewallSubnet") && contains(keys(var.subnets), "AzureBastionSubnet")
@@ -32,6 +42,11 @@ variable "subnets" {
   validation {
     condition     = var.firewall_sku_tier != "Basic" || contains(keys(var.subnets), "AzureFirewallManagementSubnet")
     error_message = "The Basic firewall tier needs a subnet named AzureFirewallManagementSubnet."
+  }
+
+  validation {
+    condition     = alltrue([for key, subnet in var.subnets : !contains(local.reserved_subnets, key) || (subnet.nsg_rules == null && !subnet.route_via_firewall)])
+    error_message = "Reserved subnets (AzureFirewallSubnet, AzureFirewallManagementSubnet, AzureBastionSubnet, GatewaySubnet) cannot take nsg_rules or route_via_firewall."
   }
 }
 

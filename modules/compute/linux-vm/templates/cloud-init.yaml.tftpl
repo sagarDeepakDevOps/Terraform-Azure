@@ -11,7 +11,7 @@ runcmd:
     <html lang="en"><head><meta charset="utf-8"><title>${vm_name}</title></head>
     <body style="font-family:sans-serif;max-width:40rem;margin:2rem auto">
     <h1>Hello from ${vm_name}</h1>
-    <p>spoke=${spoke} private_ip=$IP</p>
+    <p>vnet=${vnet} private_ip=$IP</p>
     </body></html>
     HTML
   - [ systemctl, enable, --now, apache2 ]

@@ -49,12 +49,12 @@ variable "ssh_public_key" {
 variable "install_apache" {
   type        = bool
   description = "Install Apache on first boot and serve a page naming the VM. Changing it replaces the VM."
-  default     = true
+  default     = false
 }
 
-variable "spoke_name" {
+variable "vnet_name" {
   type        = string
-  description = "Spoke the VM lives in, shown on the served page."
+  description = "Hub or spoke the VM lives in, shown on the served page."
   default     = ""
 }
 
